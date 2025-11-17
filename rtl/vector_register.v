@@ -1,27 +1,30 @@
+// -------------------------------------------------------------
 // vector_register.v
-// 4-element vector storage with write enable
+// A 4-element vector register, WIDTH bits per element.
+// Takes vector bus in[0:3] and outputs vector bus out[0:3].
+// Synchronous reset, synchronous load.
+// -------------------------------------------------------------
 
-module vector_register #(parameter WIDTH = 16) (
-    input clk,
-    input we,
-    input [1:0] addr,                       // 0..3
-    input signed [WIDTH-1:0] din,
-    output signed [WIDTH-1:0] v0,
-    output signed [WIDTH-1:0] v1,
-    output signed [WIDTH-1:0] v2,
-    output signed [WIDTH-1:0] v3
+module vector_register #(parameter WIDTH = 64) (
+    input  wire clk,
+    input  wire reset,
+    input  wire load,
+
+    input  wire signed [WIDTH-1:0] in  [0:3],
+    output reg  signed [WIDTH-1:0] out [0:3]
 );
 
-    reg signed [WIDTH-1:0] data [0:3];
+    integer i;
 
     always @(posedge clk) begin
-        if (we)
-            data[addr] <= din;
+        if (reset) begin
+            for (i = 0; i < 4; i = i + 1)
+                out[i] <= 0;
+        end
+        else if (load) begin
+            for (i = 0; i < 4; i = i + 1)
+                out[i] <= in[i];
+        end
     end
-
-    assign v0 = data[0];
-    assign v1 = data[1];
-    assign v2 = data[2];
-    assign v3 = data[3];
 
 endmodule

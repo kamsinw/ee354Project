@@ -1,7 +1,7 @@
 // max_finder.v
 // Finds max of 4 signed values
 
-module max_finder #(parameter WIDTH = 16) (
+module max_finder #(parameter WIDTH = 64) (
     input signed [WIDTH-1:0] a0,
     input signed [WIDTH-1:0] a1,
     input signed [WIDTH-1:0] a2,
