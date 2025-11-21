@@ -5,7 +5,7 @@
 // Synchronous reset, synchronous load.
 // -------------------------------------------------------------
 
-module vector_register #(parameter WIDTH = 64) (
+module vector_register #(parameter WIDTH = 16) (
     input  wire clk,
     input  wire reset,
     input  wire load,
