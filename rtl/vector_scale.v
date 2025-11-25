@@ -1,7 +1,7 @@
 // vector_scale.v
 // Normalizes vector by shifting based on max magnitude
 
-module vector_scale #(parameter WIDTH = 16) (
+module vector_scale #(parameter WIDTH = 64) (
     input  wire                      clk,
     input  wire                      start,
     input  wire signed [WIDTH-1:0]   V_in  [0:3],
