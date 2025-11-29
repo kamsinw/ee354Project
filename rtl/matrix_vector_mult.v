@@ -1,5 +1,4 @@
 // matrix_vector_mult.v
-// Computes y = A * v using 1 row per clock
 
 module matrix_vector_mult (
     input  wire        clk,

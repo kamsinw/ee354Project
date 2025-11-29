@@ -1,5 +1,4 @@
 // abs_diff.v
-// Returns |a - b|
 
 module abs_diff #(parameter WIDTH = 16) (
     input  wire signed [WIDTH-1:0] a [0:3],

@@ -1,9 +1,4 @@
-// -------------------------------------------------------------
 // vector_register.v
-// A 4-element vector register, WIDTH bits per element.
-// Takes vector bus in[0:3] and outputs vector bus out[0:3].
-// Synchronous reset, synchronous load.
-// -------------------------------------------------------------
 
 module vector_register #(parameter WIDTH = 16) (
     input  wire clk,

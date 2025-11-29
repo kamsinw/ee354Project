@@ -1,5 +1,4 @@
 // vector_scale.v
-// Normalizes vector by shifting based on max magnitude
 
 module vector_scale #(parameter WIDTH = 64) (
     input  wire                      clk,
@@ -11,7 +10,6 @@ module vector_scale #(parameter WIDTH = 64) (
 
     wire signed [WIDTH-1:0] max_val;
 
-    // max_finder now accepts an array input
     max_finder #(WIDTH) MF (
         .a(V_in),
         .max_val(max_val)
@@ -20,7 +18,6 @@ module vector_scale #(parameter WIDTH = 64) (
     integer i;
     always @(posedge clk) begin
         if (start) begin
-            // Right shift each element by 1 to keep values bounded
             for (i = 0; i < 4; i = i + 1)
                 V_out[i] <= V_in[i] >>> 1;
             done <= 1;

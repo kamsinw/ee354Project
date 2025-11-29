@@ -1,5 +1,4 @@
 // vector_diff.v
-// Computes max |v_new - v_old| for convergence test
 
 module vector_diff #(parameter WIDTH = 16) (
     input  wire                      clk,
@@ -10,9 +9,6 @@ module vector_diff #(parameter WIDTH = 16) (
     output reg                       done
 );
 
-    wire signed [WIDTH-1:0] d [0:3];
-
-    // compute per-element absolute differences using array-style abs_diff
     wire signed [WIDTH-1:0] d_in [0:3];
     abs_diff #(WIDTH) AD (
         .a(V_new),
