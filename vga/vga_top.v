@@ -18,18 +18,8 @@ module vga_top (
     output wire [3:0] vga_blue
 );
 
-    reg [1:0] clk_div;
-    wire clk_25mhz;
-    
-    always @(posedge clk_100mhz) begin
-        if (reset) begin
-            clk_div <= 2'b00;
-        end else begin
-            clk_div <= clk_div + 1'b1;
-        end
-    end
-    
-    assign clk_25mhz = clk_div[0];  // Changed from [1] to [0] to divide by 2 instead of 4 (for 50MHz input clock)
+    // Clock is now 25MHz directly, no division needed
+    wire clk_25mhz = clk_100mhz;  // Input clock is now 25MHz (40ns period)
 
     wire [9:0] hcount, vcount;
     wire visible;
