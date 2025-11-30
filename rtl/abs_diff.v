@@ -21,10 +21,20 @@ module abs_diff #(parameter WIDTH = 16) (
     wire signed [WIDTH-1:0] d2 = a2 - b2;
     wire signed [WIDTH-1:0] d3 = a3 - b3;
 
-    wire [WIDTH-1:0] diff0 = (d0 < 0) ? (-d0) : d0;
-    wire [WIDTH-1:0] diff1 = (d1 < 0) ? (-d1) : d1;
-    wire [WIDTH-1:0] diff2 = (d2 < 0) ? (-d2) : d2;
-    wire [WIDTH-1:0] diff3 = (d3 < 0) ? (-d3) : d3;
+    wire signed [WIDTH:0] d0_17 = {d0[15], d0};
+    wire signed [WIDTH:0] d1_17 = {d1[15], d1};
+    wire signed [WIDTH:0] d2_17 = {d2[15], d2};
+    wire signed [WIDTH:0] d3_17 = {d3[15], d3};
+
+    wire signed [WIDTH:0] abs_d0_17 = (d0_17 < 0) ? (-d0_17) : d0_17;
+    wire signed [WIDTH:0] abs_d1_17 = (d1_17 < 0) ? (-d1_17) : d1_17;
+    wire signed [WIDTH:0] abs_d2_17 = (d2_17 < 0) ? (-d2_17) : d2_17;
+    wire signed [WIDTH:0] abs_d3_17 = (d3_17 < 0) ? (-d3_17) : d3_17;
+
+    wire [WIDTH-1:0] diff0 = abs_d0_17[WIDTH-1:0];
+    wire [WIDTH-1:0] diff1 = abs_d1_17[WIDTH-1:0];
+    wire [WIDTH-1:0] diff2 = abs_d2_17[WIDTH-1:0];
+    wire [WIDTH-1:0] diff3 = abs_d3_17[WIDTH-1:0];
 
     assign diff = {diff3, diff2, diff1, diff0};
 

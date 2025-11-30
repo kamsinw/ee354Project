@@ -49,7 +49,7 @@ module dominant_datapath (
             if (load_y) begin
                 y_reg <= y_vec;
             end
-            if (load_max_d) begin
+            if (diff_done && load_max_d) begin
                 max_d_out <= max_diff_raw;
             end
         end

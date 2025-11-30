@@ -34,8 +34,11 @@ module vector_diff #(parameter WIDTH = 16) (
             max_diff <= maxv;
             done_reg <= 1'b1;
             done <= 1'b1;
+        end else if (done_reg) begin
+            done <= 1'b0;
+            done_reg <= 1'b0;
         end else begin
-            done <= done_reg;
+            done <= 1'b0;
         end
     end
 
