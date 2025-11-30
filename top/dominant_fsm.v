@@ -8,7 +8,7 @@ module dominant_fsm (
     input  wire        mul_done,
     input  wire        scale_done,
     input  wire        diff_done,
-    input  wire [15:0] max_d_in,
+    input  wire signed [15:0] max_d_in,
     input  wire [2:0] epsilon,
     output reg         load_v_old,
     output reg         load_y,
@@ -28,7 +28,6 @@ module dominant_fsm (
 
     reg [2:0] state;
     reg start_mult_reg, start_scale_reg, start_diff_reg;
-    reg done_reg;
     
     wire [15:0] eps16 = {13'b0, epsilon};
 
@@ -42,7 +41,6 @@ module dominant_fsm (
             start_scale <= 1'b0;
             start_diff <= 1'b0;
             done <= 1'b0;
-            done_reg <= 1'b0;
             start_mult_reg <= 1'b0;
             start_scale_reg <= 1'b0;
             start_diff_reg <= 1'b0;
@@ -55,12 +53,11 @@ module dominant_fsm (
                     start_mult <= 1'b0;
                     start_scale <= 1'b0;
                     start_diff <= 1'b0;
-                    done <= done_reg;
+                    done <= 1'b0;
                     start_mult_reg <= 1'b0;
                     start_scale_reg <= 1'b0;
                     start_diff_reg <= 1'b0;
                     if (start) begin
-                        done_reg <= 1'b0;
                         load_v_old <= 1'b1;
                         state <= MULT;
                     end
@@ -72,7 +69,7 @@ module dominant_fsm (
                     load_max_d <= 1'b0;
                     start_scale <= 1'b0;
                     start_diff <= 1'b0;
-                    done <= done_reg;
+                    done <= 1'b0;
                     if (!start_mult_reg) begin
                         start_mult <= 1'b1;
                         start_mult_reg <= 1'b1;
@@ -91,7 +88,7 @@ module dominant_fsm (
                     load_max_d <= 1'b0;
                     start_mult <= 1'b0;
                     start_diff <= 1'b0;
-                    done <= done_reg;
+                    done <= 1'b0;
                     load_y <= 1'b0;
                     if (!start_scale_reg) begin
                         start_scale <= 1'b1;
@@ -111,7 +108,7 @@ module dominant_fsm (
                     load_max_d <= 1'b0;
                     start_mult <= 1'b0;
                     start_scale <= 1'b0;
-                    done <= done_reg;
+                    done <= 1'b0;
                     if (!start_diff_reg) begin
                         start_diff <= 1'b1;
                         start_diff_reg <= 1'b1;
@@ -132,9 +129,8 @@ module dominant_fsm (
                     start_mult <= 1'b0;
                     start_scale <= 1'b0;
                     start_diff <= 1'b0;
-                    done <= done_reg;
+                    done <= 1'b0;
                     if (max_d_in <= eps16) begin
-                        done_reg <= 1'b1;
                         state <= DONE_ST;
                     end else begin
                         load_v_old <= 1'b1;
@@ -149,7 +145,6 @@ module dominant_fsm (
                     start_mult <= 1'b0;
                     start_scale <= 1'b0;
                     start_diff <= 1'b0;
-                    done_reg <= 1'b1;
                     done <= 1'b1;
                 end
 
@@ -162,7 +157,6 @@ module dominant_fsm (
                     start_scale <= 1'b0;
                     start_diff <= 1'b0;
                     done <= 1'b0;
-                    done_reg <= 1'b0;
                 end
             endcase
         end

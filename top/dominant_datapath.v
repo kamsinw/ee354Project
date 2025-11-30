@@ -16,7 +16,7 @@ module dominant_datapath (
     output wire        mul_done,
     output wire        scale_done,
     output wire        diff_done,
-    output reg  [15:0] max_d_out,
+    output wire signed [15:0] max_d_out,
     output wire signed [15:0] v0,
     output wire signed [15:0] v1,
     output wire signed [15:0] v2,
@@ -35,13 +35,14 @@ module dominant_datapath (
     wire signed [4*16-1:0] init_vec = {16'sd1, 16'sd1, 16'sd1, 16'sd1};
     wire signed [4*16-1:0] v_old_in = first_iter ? init_vec : v_new;
     
-    wire [15:0] max_diff_raw;
+    wire signed [15:0] max_diff_raw;
+    reg signed [15:0] max_d_reg;
     
     always @(posedge clk) begin
         if (reset) begin
             first_iter <= 1'b1;
             y_reg <= 64'd0;
-            max_d_out <= 16'd0;
+            max_d_reg <= 16'sd0;
         end else begin
             if (load_v_old) begin
                 first_iter <= 1'b0;
@@ -49,11 +50,13 @@ module dominant_datapath (
             if (load_y) begin
                 y_reg <= y_vec;
             end
-            if (diff_done && load_max_d) begin
-                max_d_out <= max_diff_raw;
+            if (load_max_d) begin
+                max_d_reg <= max_diff_raw;
             end
         end
     end
+
+    assign max_d_out = max_d_reg;
 
     vector_register vreg_old (
         .clk(clk),
