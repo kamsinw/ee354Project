@@ -26,6 +26,7 @@ module tb_dominant;
     integer i;
     real prev_ratio;
     real curr_ratio;
+    real diff_ratio;
     
     dominant_fsm u_fsm (
         .clk(clk),
@@ -146,7 +147,7 @@ module tb_dominant;
                         end
                         
                         if (iteration_count > 5) begin
-                            real diff_ratio = curr_ratio - prev_ratio;
+                            diff_ratio = curr_ratio - prev_ratio;
                             if (diff_ratio < 0) diff_ratio = -diff_ratio;
                             if (diff_ratio < 0.0001) begin
                                 $display("*** Vector direction stabilized ***");
