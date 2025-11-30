@@ -256,7 +256,7 @@ module display_controller (
     
     wire yellow_pixel = cursor_border || (mode_box && (sw0 == 1'b0));
     wire green_pixel = mode_box && (sw0 == 1'b1);
-
+    
     always @(*) begin
         if (!visible) begin
             // Black when not visible

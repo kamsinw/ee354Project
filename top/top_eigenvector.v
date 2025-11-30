@@ -91,6 +91,14 @@ module top_eigenvector (
         end
     end
     
+    always @(posedge clk) begin
+        if (reset) begin
+            edit_row <= 2'b00;
+            edit_col <= 2'b00;
+            edit_val <= 16'sd0;
+        end
+    end
+    
     always @(posedge clk_1k) begin
         if (reset) begin
             edit_row <= 2'b00;
@@ -144,16 +152,12 @@ module top_eigenvector (
         end
     end
     
-    // Clamp edit_val to [-16, 16] range per spec
-    wire signed [15:0] edit_val_clamped = (edit_val > 16'sd16) ? 16'sd16 :
-                                           (edit_val < -16'sd16) ? -16'sd16 : edit_val;
-    
     always @(posedge clk) begin
         if (~sw0 && btnc_pulse) begin
             if (sw1 == 1'b0) begin
-                matrix_a[edit_row][edit_col] <= edit_val_clamped;
+                matrix_a[edit_row][edit_col] <= edit_val;
             end else begin
-                vector_v[edit_row] <= edit_val_clamped;
+                vector_v[edit_row] <= edit_val;
             end
         end
     end
