@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 // vector_scale.v - 
-module vector_scale #(parameter WIDTH = 64) (
+module vector_scale #(parameter WIDTH = 16) (
     input  wire                      clk,
     input  wire                      start,
     input  wire signed [4*WIDTH-1:0] V_in,
