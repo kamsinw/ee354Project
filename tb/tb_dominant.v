@@ -81,6 +81,12 @@ module tb_dominant;
         $display("Time: %t", $time);
         $display("Current state signals: mul_done=%b, scale_done=%b, diff_done=%b, done=%b", 
                  mul_done, scale_done, diff_done, done);
+        $display("Control signals: load_v_old=%b, load_y=%b, load_max_d=%b",
+                 load_v_old, load_y, load_max_d);
+        $display("Start signals: start_mult=%b, start_scale=%b, start_diff=%b",
+                 start_mult, start_scale, start_diff);
+        $display("Current vector: [%d, %d, %d, %d]", v0, v1, v2, v3);
+        $display("Current max_diff: %d", max_d_out);
         $display("Iteration count: %d", iteration_count);
         $fatal("TIMEOUT: simulation did not complete");
     end
@@ -97,8 +103,11 @@ module tb_dominant;
         
         iteration_count = 0;
         
+        // Ensure proper reset sequence - wait for clock edges
+        @(posedge clk);
         repeat(5) @(posedge clk);
         reset = 0;
+        @(posedge clk);
         repeat(2) @(posedge clk);
         
         $display("========================================");
@@ -113,22 +122,36 @@ module tb_dominant;
         $display("Initial vector: [1, 1, 1, 1]");
         $display("========================================\n");
         
+        // Assert start signal and ensure it's seen
         start = 1;
         @(posedge clk);
         start = 0;
+        @(posedge clk);  // Extra cycle to ensure start is processed
         
         iteration_count = 0;
         timeout_counter = 0;
         
-        // Wait for FSM done signal (like cocotb testbench)
-        while (!done && timeout_counter < 10000) begin
+        // Wait for FSM done signal with enhanced debugging
+        // Use same timeout as cocotb test (1000 cycles) but allow more for safety
+        while (!done && timeout_counter < 5000) begin
             @(posedge clk);
             timeout_counter = timeout_counter + 1;
             
-            // Monitor progress every few cycles
-            if (timeout_counter % 10 == 0) begin
-                $display("Cycle %6d: v = [%6d, %6d, %6d, %6d] | max_diff = %6d | done = %b",
+            // Enhanced monitoring - show FSM control signals
+            if (timeout_counter % 50 == 0 || timeout_counter < 20) begin
+                $display("Cycle %6d: v=[%6d,%6d,%6d,%6d] max_diff=%6d done=%b",
                          timeout_counter, v0, v1, v2, v3, max_d_out, done);
+                $display("  Control: load_v_old=%b load_y=%b load_max_d=%b",
+                         load_v_old, load_y, load_max_d);
+                $display("  Start: start_mult=%b start_scale=%b start_diff=%b",
+                         start_mult, start_scale, start_diff);
+                $display("  Done:  mul_done=%b scale_done=%b diff_done=%b",
+                         mul_done, scale_done, diff_done);
+            end
+            
+            // Detect if we're stuck (same values for many cycles)
+            if (timeout_counter > 100 && timeout_counter % 100 == 0) begin
+                $display("WARNING: Still waiting after %d cycles", timeout_counter);
             end
         end
         
@@ -141,6 +164,10 @@ module tb_dominant;
             $display("\n*** TIMEOUT: FSM done signal not asserted after %d cycles ***", timeout_counter);
             $display("Current signals: mul_done=%b, scale_done=%b, diff_done=%b, done=%b",
                      mul_done, scale_done, diff_done, done);
+            $display("Control signals: load_v_old=%b, load_y=%b, load_max_d=%b",
+                     load_v_old, load_y, load_max_d);
+            $display("Start signals: start_mult=%b, start_scale=%b, start_diff=%b",
+                     start_mult, start_scale, start_diff);
             $display("Current vector: [%d, %d, %d, %d]", v0, v1, v2, v3);
             $display("Current max_diff: %d", max_d_out);
             $fatal("Test failed: timeout waiting for done signal");
