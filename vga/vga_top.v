@@ -29,7 +29,7 @@ module vga_top (
         end
     end
     
-    assign clk_25mhz = clk_div[1];
+    assign clk_25mhz = clk_div[0];  // Changed from [1] to [0] to divide by 2 instead of 4 (for 50MHz input clock)
 
     wire [9:0] hcount, vcount;
     wire visible;
