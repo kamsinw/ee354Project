@@ -1,4 +1,4 @@
-// dominant_datapath.v - Power iteration datapath
+// dominant_datapath.v - Power iteration datapath 
 
 module dominant_datapath (
     input  wire        clk,
@@ -23,29 +23,18 @@ module dominant_datapath (
     output wire signed [15:0] v3
 );
 
-    wire signed [15:0] A [0:3][0:3];
-    assign A[0][0] = A00; assign A[0][1] = A01; assign A[0][2] = A02; assign A[0][3] = A03;
-    assign A[1][0] = A10; assign A[1][1] = A11; assign A[1][2] = A12; assign A[1][3] = A13;
-    assign A[2][0] = A20; assign A[2][1] = A21; assign A[2][2] = A22; assign A[2][3] = A23;
-    assign A[3][0] = A30; assign A[3][1] = A31; assign A[3][2] = A32; assign A[3][3] = A33;
+    wire signed [16*16-1:0] A;
+    assign A = {A33, A32, A31, A30, A23, A22, A21, A20, A13, A12, A11, A10, A03, A02, A01, A00};
 
-    wire signed [15:0] v_old [0:3];
-    wire signed [15:0] v_new [0:3];
-    wire signed [15:0] y_vec [0:3];
-    reg signed [15:0] y_reg [0:3];
+    wire signed [4*16-1:0] v_old;
+    wire signed [4*16-1:0] v_new;
+    wire signed [4*16-1:0] y_vec;
+    reg signed [4*16-1:0] y_reg;
     reg first_iter;
     
-    wire signed [15:0] init_vec [0:3];
-    assign init_vec[0] = 16'sd1;
-    assign init_vec[1] = 16'sd1;
-    assign init_vec[2] = 16'sd1;
-    assign init_vec[3] = 16'sd1;
+    wire signed [4*16-1:0] init_vec = {16'sd1, 16'sd1, 16'sd1, 16'sd1};
     
-    wire signed [15:0] v_old_in [0:3];
-    assign v_old_in[0] = first_iter ? init_vec[0] : v_new[0];
-    assign v_old_in[1] = first_iter ? init_vec[1] : v_new[1];
-    assign v_old_in[2] = first_iter ? init_vec[2] : v_new[2];
-    assign v_old_in[3] = first_iter ? init_vec[3] : v_new[3];
+    wire signed [4*16-1:0] v_old_in = first_iter ? init_vec : v_new;
     
     always @(posedge clk) begin
         if (reset) begin
@@ -74,15 +63,9 @@ module dominant_datapath (
 
     always @(posedge clk) begin
         if (reset) begin
-            y_reg[0] <= 0;
-            y_reg[1] <= 0;
-            y_reg[2] <= 0;
-            y_reg[3] <= 0;
+            y_reg <= 64'd0;
         end else if (load_y) begin
-            y_reg[0] <= y_vec[0];
-            y_reg[1] <= y_vec[1];
-            y_reg[2] <= y_vec[2];
-            y_reg[3] <= y_vec[3];
+            y_reg <= y_vec;
         end
     end
 
@@ -103,10 +86,9 @@ module dominant_datapath (
         .done(diff_done)
     );
 
-    assign v0 = v_new[0];
-    assign v1 = v_new[1];
-    assign v2 = v_new[2];
-    assign v3 = v_new[3];
+    assign v0 = v_new[15:0];
+    assign v1 = v_new[31:16];
+    assign v2 = v_new[47:32];
+    assign v3 = v_new[63:48];
 
 endmodule
-

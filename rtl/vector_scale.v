@@ -1,10 +1,9 @@
-// vector_scale.v
-
+// vector_scale.v - 
 module vector_scale #(parameter WIDTH = 64) (
     input  wire                      clk,
     input  wire                      start,
-    input  wire signed [WIDTH-1:0]   V_in  [0:3],
-    output reg  signed [WIDTH-1:0]   V_out [0:3],
+    input  wire signed [4*WIDTH-1:0] V_in,
+    output reg  signed [4*WIDTH-1:0] V_out,
     output reg                       done
 );
 
@@ -15,11 +14,14 @@ module vector_scale #(parameter WIDTH = 64) (
         .max_val(max_val)
     );
 
-    integer i;
+    wire signed [WIDTH-1:0] V_in0 = V_in[WIDTH-1:0];
+    wire signed [WIDTH-1:0] V_in1 = V_in[2*WIDTH-1:WIDTH];
+    wire signed [WIDTH-1:0] V_in2 = V_in[3*WIDTH-1:2*WIDTH];
+    wire signed [WIDTH-1:0] V_in3 = V_in[4*WIDTH-1:3*WIDTH];
+
     always @(posedge clk) begin
         if (start) begin
-            for (i = 0; i < 4; i = i + 1)
-                V_out[i] <= V_in[i] >>> 1;
+            V_out <= {V_in3 >>> 1, V_in2 >>> 1, V_in1 >>> 1, V_in0 >>> 1};
             done <= 1;
         end else begin
             done <= 0;

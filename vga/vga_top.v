@@ -1,4 +1,4 @@
-// vga_top.v
+// vga_top.v - 
 
 module vga_top (
     input  wire clk_100mhz,
@@ -7,8 +7,8 @@ module vga_top (
     input  wire [1:0] edit_col,
     input  wire sw0,
     input  wire sw1,
-    input  wire signed [15:0] matrix_a [0:3][0:3],
-    input  wire signed [15:0] vector_v [0:3],
+    input  wire signed [255:0] matrix_a,
+    input  wire signed [63:0] vector_v,
     output wire vga_hsync,
     output wire vga_vsync,
     output wire [3:0] vga_red,
@@ -58,4 +58,3 @@ module vga_top (
     );
 
 endmodule
-

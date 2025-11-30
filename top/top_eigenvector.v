@@ -140,7 +140,7 @@ module top_eigenvector (
     wire start_mult, start_scale, start_diff;
     wire mul_done, scale_done, diff_done;
     wire signed [15:0] max_d_out;
-    wire signed [15:0] v_out [0:3];
+    wire signed [63:0] v_out;
     
     reg sw0_r;
     wire sw0_edge;
@@ -198,10 +198,10 @@ module top_eigenvector (
         .scale_done(scale_done),
         .diff_done(diff_done),
         .max_d_out(max_d_out),
-        .v0(v_out[0]),
-        .v1(v_out[1]),
-        .v2(v_out[2]),
-        .v3(v_out[3])
+        .v0(v_out[15:0]),
+        .v1(v_out[31:16]),
+        .v2(v_out[47:32]),
+        .v3(v_out[63:48])
     );
     
     assign led[0] = fsm_done;
@@ -221,6 +221,15 @@ module top_eigenvector (
     assign cg = 1'b1;
     assign dp = 1'b1;
     
+    wire signed [16*16-1:0] matrix_a_packed;
+    assign matrix_a_packed = {matrix_a[3][3], matrix_a[3][2], matrix_a[3][1], matrix_a[3][0],
+                              matrix_a[2][3], matrix_a[2][2], matrix_a[2][1], matrix_a[2][0],
+                              matrix_a[1][3], matrix_a[1][2], matrix_a[1][1], matrix_a[1][0],
+                              matrix_a[0][3], matrix_a[0][2], matrix_a[0][1], matrix_a[0][0]};
+
+    wire signed [4*16-1:0] vector_v_packed;
+    assign vector_v_packed = {vector_v[3], vector_v[2], vector_v[1], vector_v[0]};
+
     vga_top vga_display (
         .clk_100mhz(clk),
         .reset(reset),
@@ -228,8 +237,8 @@ module top_eigenvector (
         .edit_col(edit_col),
         .sw0(sw0),
         .sw1(sw1),
-        .matrix_a(matrix_a),
-        .vector_v(vector_v),
+        .matrix_a(matrix_a_packed),
+        .vector_v(vector_v_packed),
         .vga_hsync(vga_hsync),
         .vga_vsync(vga_vsync),
         .vga_red(vga_red),

@@ -1,5 +1,4 @@
-// tb_vector_diff.v
-// Testbench for vector_diff module
+// tb_vector_diff.v - 
 
 `timescale 1ns / 1ps
 
@@ -10,8 +9,8 @@ module tb_vector_diff;
 
     reg clk;
     reg start;
-    reg signed [WIDTH-1:0] V_new [0:3];
-    reg signed [WIDTH-1:0] V_old [0:3];
+    reg signed [4*WIDTH-1:0] V_new;
+    reg signed [4*WIDTH-1:0] V_old;
     wire signed [WIDTH-1:0] max_diff;
     wire done;
 
@@ -24,7 +23,15 @@ module tb_vector_diff;
         .done(done)
     );
 
-    // Clock generation
+    wire signed [WIDTH-1:0] V_new0 = V_new[WIDTH-1:0];
+    wire signed [WIDTH-1:0] V_new1 = V_new[2*WIDTH-1:WIDTH];
+    wire signed [WIDTH-1:0] V_new2 = V_new[3*WIDTH-1:2*WIDTH];
+    wire signed [WIDTH-1:0] V_new3 = V_new[4*WIDTH-1:3*WIDTH];
+    wire signed [WIDTH-1:0] V_old0 = V_old[WIDTH-1:0];
+    wire signed [WIDTH-1:0] V_old1 = V_old[2*WIDTH-1:WIDTH];
+    wire signed [WIDTH-1:0] V_old2 = V_old[3*WIDTH-1:2*WIDTH];
+    wire signed [WIDTH-1:0] V_old3 = V_old[4*WIDTH-1:3*WIDTH];
+
     initial begin
         clk = 0;
         forever #(CLK_PERIOD/2) clk = ~clk;
@@ -37,15 +44,12 @@ module tb_vector_diff;
 
         start = 0;
 
-        // Test 1: Identical vectors (converged)
-        V_new[0] = 16'sd10; V_old[0] = 16'sd10;
-        V_new[1] = 16'sd20; V_old[1] = 16'sd20;
-        V_new[2] = 16'sd30; V_old[2] = 16'sd30;
-        V_new[3] = 16'sd40; V_old[3] = 16'sd40;
+        V_new = {16'sd40, 16'sd30, 16'sd20, 16'sd10};
+        V_old = {16'sd40, 16'sd30, 16'sd20, 16'sd10};
         
         $display("Test 1: Identical vectors (converged)");
-        $display("  V_new = [%d, %d, %d, %d]", V_new[0], V_new[1], V_new[2], V_new[3]);
-        $display("  V_old = [%d, %d, %d, %d]", V_old[0], V_old[1], V_old[2], V_old[3]);
+        $display("  V_new = [%d, %d, %d, %d]", V_new0, V_new1, V_new2, V_new3);
+        $display("  V_old = [%d, %d, %d, %d]", V_old0, V_old1, V_old2, V_old3);
         
         start = 1;
         #(CLK_PERIOD);
@@ -57,15 +61,12 @@ module tb_vector_diff;
         if (max_diff == 0) $display("  PASS");
         else $display("  FAIL");
 
-        // Test 2: Small differences
-        V_new[0] = 16'sd10; V_old[0] = 16'sd9;
-        V_new[1] = 16'sd20; V_old[1] = 16'sd21;
-        V_new[2] = 16'sd30; V_old[2] = 16'sd29;
-        V_new[3] = 16'sd40; V_old[3] = 16'sd41;
+        V_new = {16'sd41, 16'sd20, 16'sd29, 16'sd10};
+        V_old = {16'sd40, 16'sd21, 16'sd30, 16'sd9};
         
         $display("\nTest 2: Small differences");
-        $display("  V_new = [%d, %d, %d, %d]", V_new[0], V_new[1], V_new[2], V_new[3]);
-        $display("  V_old = [%d, %d, %d, %d]", V_old[0], V_old[1], V_old[2], V_old[3]);
+        $display("  V_new = [%d, %d, %d, %d]", V_new0, V_new1, V_new2, V_new3);
+        $display("  V_old = [%d, %d, %d, %d]", V_old0, V_old1, V_old2, V_old3);
         
         start = 1;
         #(CLK_PERIOD);
@@ -77,15 +78,12 @@ module tb_vector_diff;
         if (max_diff == 1) $display("  PASS");
         else $display("  FAIL");
 
-        // Test 3: Larger differences
-        V_new[0] = 16'sd10; V_old[0] = 16'sd5;
-        V_new[1] = 16'sd20; V_old[1] = 16'sd25;
-        V_new[2] = 16'sd30; V_old[2] = 16'sd15;
-        V_new[3] = 16'sd40; V_old[3] = 16'sd45;
+        V_new = {16'sd45, 16'sd25, 16'sd15, 16'sd5};
+        V_old = {16'sd40, 16'sd20, 16'sd30, 16'sd10};
         
         $display("\nTest 3: Larger differences");
-        $display("  V_new = [%d, %d, %d, %d]", V_new[0], V_new[1], V_new[2], V_new[3]);
-        $display("  V_old = [%d, %d, %d, %d]", V_old[0], V_old[1], V_old[2], V_old[3]);
+        $display("  V_new = [%d, %d, %d, %d]", V_new0, V_new1, V_new2, V_new3);
+        $display("  V_old = [%d, %d, %d, %d]", V_old0, V_old1, V_old2, V_old3);
         
         start = 1;
         #(CLK_PERIOD);
@@ -93,20 +91,16 @@ module tb_vector_diff;
         wait(done == 1);
         #(CLK_PERIOD);
         
-        // Differences: [5, 5, 15, 5], max = 15
         $display("  max_diff = %d (expected: 15)", max_diff);
         if (max_diff == 15) $display("  PASS");
         else $display("  FAIL");
 
-        // Test 4: Mixed signs
-        V_new[0] = 16'sd10; V_old[0] = -16'sd5;
-        V_new[1] = -16'sd20; V_old[1] = 16'sd15;
-        V_new[2] = 16'sd30; V_old[2] = 16'sd25;
-        V_new[3] = -16'sd40; V_old[3] = -16'sd35;
+        V_new = {-16'sd5, 16'sd20, 16'sd25, -16'sd35};
+        V_old = {16'sd10, -16'sd15, 16'sd30, -16'sd40};
         
         $display("\nTest 4: Mixed signs");
-        $display("  V_new = [%d, %d, %d, %d]", V_new[0], V_new[1], V_new[2], V_new[3]);
-        $display("  V_old = [%d, %d, %d, %d]", V_old[0], V_old[1], V_old[2], V_old[3]);
+        $display("  V_new = [%d, %d, %d, %d]", V_new0, V_new1, V_new2, V_new3);
+        $display("  V_old = [%d, %d, %d, %d]", V_old0, V_old1, V_old2, V_old3);
         
         start = 1;
         #(CLK_PERIOD);
@@ -114,7 +108,6 @@ module tb_vector_diff;
         wait(done == 1);
         #(CLK_PERIOD);
         
-        // Differences: [15, 35, 5, 5], max = 35
         $display("  max_diff = %d (expected: 35)", max_diff);
         if (max_diff == 35) $display("  PASS");
         else $display("  FAIL");
@@ -125,4 +118,3 @@ module tb_vector_diff;
     end
 
 endmodule
-

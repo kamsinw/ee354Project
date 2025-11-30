@@ -1,15 +1,14 @@
-// vector_diff.v
-
+// vector_diff.v - 
 module vector_diff #(parameter WIDTH = 16) (
     input  wire                      clk,
     input  wire                      start,
-    input  wire signed [WIDTH-1:0]   V_new [0:3],
-    input  wire signed [WIDTH-1:0]   V_old [0:3],
+    input  wire signed [4*WIDTH-1:0] V_new,
+    input  wire signed [4*WIDTH-1:0] V_old,
     output reg  signed [WIDTH-1:0]   max_diff,
     output reg                       done
 );
 
-    wire signed [WIDTH-1:0] d_in [0:3];
+    wire signed [4*WIDTH-1:0] d_in;
     abs_diff #(WIDTH) AD (
         .a(V_new),
         .b(V_old),

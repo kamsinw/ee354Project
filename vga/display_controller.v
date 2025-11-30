@@ -1,4 +1,4 @@
-// display_controller.v - VGA rendering controller using rectangles only
+// display_controller.v - 
 
 module display_controller (
     input  wire [9:0] hcount,
@@ -8,8 +8,8 @@ module display_controller (
     input  wire [1:0] edit_col,
     input  wire sw0,
     input  wire sw1,
-    input  wire signed [15:0] matrix_a [0:3][0:3],
-    input  wire signed [15:0] vector_v [0:3],
+    input  wire signed [255:0] matrix_a,
+    input  wire signed [63:0] vector_v,
     output reg  [3:0] red,
     output reg  [3:0] green,
     output reg  [3:0] blue
@@ -70,8 +70,32 @@ module display_controller (
                          (vec_cell_x < 2) || (vec_cell_x >= CELL_WIDTH - 2) ||
                          (vec_cell_y < 2) || (vec_cell_y >= CELL_HEIGHT - 2));
 
-    wire signed [15:0] matrix_val = matrix_a[matrix_row][matrix_col];
-    wire signed [15:0] vector_val = vector_v[vector_row];
+    wire signed [15:0] matrix_a_unpack [0:3][0:3];
+    assign matrix_a_unpack[0][0] = matrix_a[15:0];
+    assign matrix_a_unpack[0][1] = matrix_a[31:16];
+    assign matrix_a_unpack[0][2] = matrix_a[47:32];
+    assign matrix_a_unpack[0][3] = matrix_a[63:48];
+    assign matrix_a_unpack[1][0] = matrix_a[79:64];
+    assign matrix_a_unpack[1][1] = matrix_a[95:80];
+    assign matrix_a_unpack[1][2] = matrix_a[111:96];
+    assign matrix_a_unpack[1][3] = matrix_a[127:112];
+    assign matrix_a_unpack[2][0] = matrix_a[143:128];
+    assign matrix_a_unpack[2][1] = matrix_a[159:144];
+    assign matrix_a_unpack[2][2] = matrix_a[175:160];
+    assign matrix_a_unpack[2][3] = matrix_a[191:176];
+    assign matrix_a_unpack[3][0] = matrix_a[207:192];
+    assign matrix_a_unpack[3][1] = matrix_a[223:208];
+    assign matrix_a_unpack[3][2] = matrix_a[239:224];
+    assign matrix_a_unpack[3][3] = matrix_a[255:240];
+
+    wire signed [15:0] vector_v_unpack [0:3];
+    assign vector_v_unpack[0] = vector_v[15:0];
+    assign vector_v_unpack[1] = vector_v[31:16];
+    assign vector_v_unpack[2] = vector_v[47:32];
+    assign vector_v_unpack[3] = vector_v[63:48];
+
+    wire signed [15:0] matrix_val = matrix_a_unpack[matrix_row][matrix_col];
+    wire signed [15:0] vector_val = vector_v_unpack[vector_row];
     
     wire [15:0] matrix_abs = (matrix_val < 0) ? -matrix_val : matrix_val;
     wire [15:0] vector_abs = (vector_val < 0) ? -vector_val : vector_val;

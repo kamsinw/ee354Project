@@ -13,14 +13,12 @@ module tb_vga_renderer;
     reg visible;
     reg [1:0] edit_row, edit_col;
     reg sw0, sw1;
-    reg signed [15:0] matrix_a [0:3][0:3];
-    reg signed [15:0] vector_v [0:3];
+    reg signed [16*16-1:0] matrix_a;
+    reg signed [4*16-1:0] vector_v;
     
     wire [3:0] red, green, blue;
 
-    vga_renderer uut (
-        .clk(clk),
-        .reset(reset),
+    display_controller uut (
         .hcount(hcount),
         .vcount(vcount),
         .visible(visible),
@@ -56,14 +54,28 @@ module tb_vga_renderer;
         sw0 = 0;  // EDIT mode
         sw1 = 0;  // Edit matrix
         
-        // Initialize matrix and vector
-        integer i, j;
-        for (i = 0; i < 4; i = i + 1) begin
-            for (j = 0; j < 4; j = j + 1) begin
-                matrix_a[i][j] = 16'sd1;
-            end
-            vector_v[i] = 16'sd1;
-        end
+        matrix_a = {(16*16){1'b0}};
+        vector_v = {(4*16){1'b0}};
+        matrix_a[15:0] = 16'sd1;
+        matrix_a[31:16] = 16'sd1;
+        matrix_a[47:32] = 16'sd1;
+        matrix_a[63:48] = 16'sd1;
+        matrix_a[79:64] = 16'sd1;
+        matrix_a[95:80] = 16'sd1;
+        matrix_a[111:96] = 16'sd1;
+        matrix_a[127:112] = 16'sd1;
+        matrix_a[143:128] = 16'sd1;
+        matrix_a[159:144] = 16'sd1;
+        matrix_a[175:160] = 16'sd1;
+        matrix_a[191:176] = 16'sd1;
+        matrix_a[207:192] = 16'sd1;
+        matrix_a[223:208] = 16'sd1;
+        matrix_a[239:224] = 16'sd1;
+        matrix_a[255:240] = 16'sd1;
+        vector_v[15:0] = 16'sd1;
+        vector_v[31:16] = 16'sd1;
+        vector_v[47:32] = 16'sd1;
+        vector_v[63:48] = 16'sd1;
 
         #(CLK_PERIOD * 5);
         reset = 0;
@@ -122,7 +134,7 @@ module tb_vga_renderer;
         else $display("  FAIL");
 
         $display("\nTest 7: Matrix with negative value");
-        matrix_a[0][0] = -16'sd5;
+        matrix_a[15:0] = -16'sd5;
         hcount = 50;  // Inside cell [0][0]
         vcount = 80;
         visible = 1;
