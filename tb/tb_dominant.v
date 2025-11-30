@@ -25,8 +25,6 @@ module tb_dominant;
 	integer start_clock_cnt;
 	integer iteration_clock_cnt;
 	reg Load_max_d_prev;
-	integer timeout_cycles;
-	integer cycle_count;
 	
 	dominant_fsm u_fsm (
 		.clk(Clk),
@@ -127,6 +125,8 @@ module tb_dominant;
 	
 	task APPLY_STIMULUS;
 		begin
+			integer cycle_count;
+			
 			@(posedge Clk);
 			@(posedge Clk);
 			#1;
@@ -138,44 +138,54 @@ module tb_dominant;
 			Start = 0;
 			
 			start_clock_cnt = clk_cnt;
-			timeout_cycles = 1000;
 			cycle_count = 0;
 			
-			while (Done == 0 && cycle_count < timeout_cycles) begin
-				@(posedge Clk);
-				cycle_count = cycle_count + 1;
-				
-				if (Load_max_d == 1 && Load_max_d_prev == 0) begin
-					@(posedge Clk);
-					#1;
-					iteration_count = iteration_count + 1;
-					iteration_clock_cnt = clk_cnt - start_clock_cnt;
-					
-					$display("Iteration %0d (at clock %0d):", iteration_count, clk_cnt);
-					if (iteration_count == 1) begin
-						$display("  v_old: [1, 1, 1, 1] (initial vector)");
-					end else begin
-						$display("  v_old: [%d, %d, %d, %d]", prev_v0, prev_v1, prev_v2, prev_v3);
+			fork
+				begin
+					repeat(5000) begin
+						@(posedge Clk);
+						cycle_count = cycle_count + 1;
 					end
-					$display("  y: [not accessible from testbench]");
-					$display("  v_new: [%d, %d, %d, %d]", v0, v1, v2, v3);
-					$display("  max_diff: %d", Max_d_out);
-					$display("  Clocks taken so far: %d", iteration_clock_cnt);
-					$display("");
-					
-					prev_v0 = v0;
-					prev_v1 = v1;
-					prev_v2 = v2;
-					prev_v3 = v3;
+					$display("ERROR: Timeout after %d cycles - Done never asserted", cycle_count);
+					$display("  Done = %b, Mul_done = %b, Scale_done = %b, Diff_done = %b", Done, Mul_done, Scale_done, Diff_done);
+					$display("  Load_v_old = %b, Load_y = %b, Load_max_d = %b", Load_v_old, Load_y, Load_max_d);
+					$display("  Start_mult = %b, Start_scale = %b, Start_diff = %b", Start_mult, Start_scale, Start_diff);
+					$display("  max_diff = %d, epsilon = %d", Max_d_out, Epsilon);
+					$fatal("Simulation timeout");
 				end
-				
-				Load_max_d_prev = Load_max_d;
-			end
-			
-			if (Done == 0) begin
-				$display("ERROR: Computation did not converge after %d cycles", cycle_count);
-				$fatal("TIMEOUT: simulation did not complete");
-			end
+				begin
+					while (Done == 0) begin
+						@(posedge Clk);
+						
+						if (Load_max_d == 1 && Load_max_d_prev == 0) begin
+							@(posedge Clk);
+							#1;
+							iteration_count = iteration_count + 1;
+							iteration_clock_cnt = clk_cnt - start_clock_cnt;
+							
+							$display("Iteration %0d (at clock %0d):", iteration_count, clk_cnt);
+							if (iteration_count == 1) begin
+								$display("  v_old: [1, 1, 1, 1] (initial vector)");
+							end else begin
+								$display("  v_old: [%d, %d, %d, %d]", prev_v0, prev_v1, prev_v2, prev_v3);
+							end
+							$display("  y: [not accessible from testbench]");
+							$display("  v_new: [%d, %d, %d, %d]", v0, v1, v2, v3);
+							$display("  max_diff: %d", Max_d_out);
+							$display("  Clocks taken so far: %d", iteration_clock_cnt);
+							$display("");
+							
+							prev_v0 = v0;
+							prev_v1 = v1;
+							prev_v2 = v2;
+							prev_v3 = v3;
+						end
+						
+						Load_max_d_prev = Load_max_d;
+					end
+				end
+			join_any
+			disable fork;
 			
 			@(posedge Clk);
 			@(posedge Clk);
