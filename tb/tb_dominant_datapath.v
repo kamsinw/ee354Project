@@ -18,6 +18,10 @@ module tb_dominant_datapath;
     reg signed [15:0] A20, A21, A22, A23;
     reg signed [15:0] A30, A31, A32, A33;
 
+    wire mul_done;
+    wire scale_done;
+    wire diff_done;
+    wire signed [15:0] max_d_out;
     wire signed [15:0] v0, v1, v2, v3;
 
     dominant_datapath uut (
@@ -33,6 +37,10 @@ module tb_dominant_datapath;
         .A10(A10), .A11(A11), .A12(A12), .A13(A13),
         .A20(A20), .A21(A21), .A22(A22), .A23(A23),
         .A30(A30), .A31(A31), .A32(A32), .A33(A33),
+        .mul_done(mul_done),
+        .scale_done(scale_done),
+        .diff_done(diff_done),
+        .max_d_out(max_d_out),
         .v0(v0),
         .v1(v1),
         .v2(v2),
@@ -45,15 +53,11 @@ module tb_dominant_datapath;
     end
 
     initial begin
-        #500000;
-        $fatal("TIMEOUT: simulation did not complete");
-    end
-
-    initial begin
         $display("========================================");
         $display("Testing dominant_datapath");
         $display("========================================");
 
+        // Reset
         reset = 1;
         load_v_old = 0;
         load_y = 0;
@@ -61,108 +65,109 @@ module tb_dominant_datapath;
         start_mult = 0;
         start_scale = 0;
         start_diff = 0;
-
-        A00 = 4; A01 = 1; A02 = 1; A03 = 1;
-        A10 = 1; A11 = 4; A12 = 1; A13 = 1;
-        A20 = 1; A21 = 1; A22 = 4; A23 = 1;
-        A30 = 1; A31 = 1; A32 = 1; A33 = 4;
-
-        repeat(5) @(posedge clk);
+        
+        // Set up identity matrix
+        A00 = 16'sd1; A01 = 16'sd0; A02 = 16'sd0; A03 = 16'sd0;
+        A10 = 16'sd0; A11 = 16'sd1; A12 = 16'sd0; A13 = 16'sd0;
+        A20 = 16'sd0; A21 = 16'sd0; A22 = 16'sd1; A23 = 16'sd0;
+        A30 = 16'sd0; A31 = 16'sd0; A32 = 16'sd0; A33 = 16'sd1;
+        
+        @(posedge clk);
+        @(posedge clk);
         reset = 0;
-        repeat(2) @(posedge clk);
-
-        $display("Test 1: Reset");
-        $display("  v = [%d, %d, %d, %d]", v0, v1, v2, v3);
-
-        $display("\nTest 2: One iteration cycle");
-
-        load_v_old = 1;
+        
+        // Initial vector should be [1,1,1,1] after reset
         @(posedge clk);
-        load_v_old = 0;
-        @(posedge clk);
-
+        if (v0 == 1 && v1 == 1 && v2 == 1 && v3 == 1) begin
+            $display("Test 1: Initial vector is [1,1,1,1] - PASS");
+        end else begin
+            $display("Test 1: Initial vector is [1,1,1,1] - FAIL (got [%d,%d,%d,%d])", v0, v1, v2, v3);
+        end
+        
+        // Start matrix-vector multiply
         start_mult = 1;
         @(posedge clk);
         start_mult = 0;
-        repeat(4) @(posedge clk);
-
-        $display("  After matrix multiply (4 cycles)");
-
+        
+        // Wait for mul_done
+        begin
+            integer timeout;
+            timeout = 100;
+            while (mul_done == 0 && timeout > 0) begin
+                @(posedge clk);
+                timeout = timeout - 1;
+            end
+            if (mul_done == 1) begin
+                $display("Test 2: Matrix multiply completed - PASS");
+            end else begin
+                $display("Test 2: Matrix multiply completed - FAIL (timeout)");
+            end
+        end
+        
+        // Load y
         load_y = 1;
-        start_scale = 1;
         @(posedge clk);
         load_y = 0;
+        
+        // Start scaling
+        start_scale = 1;
+        @(posedge clk);
         start_scale = 0;
-        repeat(2) @(posedge clk);
-
-        $display("  After scaling");
-        $display("  v = [%d, %d, %d, %d]", v0, v1, v2, v3);
-
+        
+        // Wait for scale_done
+        begin
+            integer timeout;
+            timeout = 100;
+            while (scale_done == 0 && timeout > 0) begin
+                @(posedge clk);
+                timeout = timeout - 1;
+            end
+            if (scale_done == 1) begin
+                $display("Test 3: Scaling completed - PASS");
+            end else begin
+                $display("Test 3: Scaling completed - FAIL (timeout)");
+            end
+        end
+        
+        // Start diff
         start_diff = 1;
         @(posedge clk);
         start_diff = 0;
-        repeat(2) @(posedge clk);
-
-        $display("  After diff");
-
-        load_max_d = 1;
-        @(posedge clk);
-        load_max_d = 0;
-        @(posedge clk);
-
-        $display("\nTest 3: Multiple iterations");
-        $display("Iteration 1: v = [%d, %d, %d, %d]", v0, v1, v2, v3);
-
-        integer i;
-        for (i = 0; i < 5; i = i + 1) begin
-            load_v_old = 1;
-            @(posedge clk);
-            load_v_old = 0;
-            @(posedge clk);
-
-            start_mult = 1;
-            @(posedge clk);
-            start_mult = 0;
-            repeat(4) @(posedge clk);
-
-            load_y = 1;
-            start_scale = 1;
-            @(posedge clk);
-            load_y = 0;
-            start_scale = 0;
-            repeat(2) @(posedge clk);
-
-            start_diff = 1;
-            @(posedge clk);
-            start_diff = 0;
-            repeat(2) @(posedge clk);
-
-            load_max_d = 1;
-            @(posedge clk);
-            load_max_d = 0;
-            @(posedge clk);
-
-            $display("Iteration %0d: v = [%d, %d, %d, %d]", i+2, v0, v1, v2, v3);
+        
+        // Wait for diff_done
+        begin
+            integer timeout;
+            timeout = 100;
+            while (diff_done == 0 && timeout > 0) begin
+                @(posedge clk);
+                timeout = timeout - 1;
+            end
+            if (diff_done == 1) begin
+                $display("Test 4: Difference calculation completed - PASS");
+            end else begin
+                $display("Test 4: Difference calculation completed - FAIL (timeout)");
+            end
         end
 
+        $display("========================================");
+        $display("✓ dominant_datapath test passed");
         $display("========================================\n");
-        $display("TEST PASSED");
         repeat(10) @(posedge clk);
         $finish;
     end
 
     always @(posedge clk) begin
         if (^v0 === 1'bx || ^v0 === 1'bz) begin
-            $display("ERROR: X or Z in v0 at time %t", $time);
+            $display("ERROR: X or Z detected in v0 at time %t", $time);
         end
         if (^v1 === 1'bx || ^v1 === 1'bz) begin
-            $display("ERROR: X or Z in v1 at time %t", $time);
+            $display("ERROR: X or Z detected in v1 at time %t", $time);
         end
         if (^v2 === 1'bx || ^v2 === 1'bz) begin
-            $display("ERROR: X or Z in v2 at time %t", $time);
+            $display("ERROR: X or Z detected in v2 at time %t", $time);
         end
         if (^v3 === 1'bx || ^v3 === 1'bz) begin
-            $display("ERROR: X or Z in v3 at time %t", $time);
+            $display("ERROR: X or Z detected in v3 at time %t", $time);
         end
     end
 

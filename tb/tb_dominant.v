@@ -99,11 +99,10 @@ module tb_dominant;
         $display("Initial vector: [1, 1, 1, 1]");
         $display("========================================\n");
         
-        // Reset sequence: assert reset for 5 cycles, then deassert on clock edge
+        // Reset sequence: assert reset for 2 clock cycles, then deassert (match cocotb pattern)
         @(posedge clk);
-        repeat(5) @(posedge clk);
+        @(posedge clk);
         reset = 0;
-        @(posedge clk);
         
         // Pulse start signal HIGH for exactly one clock cycle
         start = 1;
