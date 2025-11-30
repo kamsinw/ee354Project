@@ -23,17 +23,22 @@ module vector_scale #(parameter WIDTH = 16) (
 
     wire signed [WIDTH-1:0] scale = max_val;
     
-    wire signed [31:0] V_in0_shifted = V_in0 << 15;
-    wire signed [31:0] V_in1_shifted = V_in1 << 15;
-    wire signed [31:0] V_in2_shifted = V_in2 << 15;
-    wire signed [31:0] V_in3_shifted = V_in3 << 15;
+    wire signed [31:0] V_in0_ext = {{16{V_in0[15]}}, V_in0};
+    wire signed [31:0] V_in1_ext = {{16{V_in1[15]}}, V_in1};
+    wire signed [31:0] V_in2_ext = {{16{V_in2[15]}}, V_in2};
+    wire signed [31:0] V_in3_ext = {{16{V_in3[15]}}, V_in3};
+    
+    wire signed [31:0] V_in0_shifted = V_in0_ext << 15;
+    wire signed [31:0] V_in1_shifted = V_in1_ext << 15;
+    wire signed [31:0] V_in2_shifted = V_in2_ext << 15;
+    wire signed [31:0] V_in3_shifted = V_in3_ext << 15;
     
     wire signed [31:0] scale_ext = {16'b0, scale};
     
-    wire signed [31:0] V_out0_div = (scale > 0) ? (V_in0_shifted / scale_ext) : V_in0;
-    wire signed [31:0] V_out1_div = (scale > 0) ? (V_in1_shifted / scale_ext) : V_in1;
-    wire signed [31:0] V_out2_div = (scale > 0) ? (V_in2_shifted / scale_ext) : V_in2;
-    wire signed [31:0] V_out3_div = (scale > 0) ? (V_in3_shifted / scale_ext) : V_in3;
+    wire signed [31:0] V_out0_div = (scale > 0) ? (V_in0_shifted / scale_ext) : V_in0_ext;
+    wire signed [31:0] V_out1_div = (scale > 0) ? (V_in1_shifted / scale_ext) : V_in1_ext;
+    wire signed [31:0] V_out2_div = (scale > 0) ? (V_in2_shifted / scale_ext) : V_in2_ext;
+    wire signed [31:0] V_out3_div = (scale > 0) ? (V_in3_shifted / scale_ext) : V_in3_ext;
     
     wire signed [15:0] V_out0_clamped;
     wire signed [15:0] V_out1_clamped;
@@ -62,9 +67,6 @@ module vector_scale #(parameter WIDTH = 16) (
             done <= 1'b1;
         end else begin
             done <= done_reg;
-            if (!start && done_reg) begin
-                done_reg <= 1'b0;
-            end
         end
     end
 
