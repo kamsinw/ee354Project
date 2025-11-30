@@ -39,6 +39,7 @@ test_all:
 	rm -rf sim_build && $(MAKE) TEST=test_dominant_fsm.py TOPLEVEL=dominant_fsm VERILOG_SOURCES=../top/dominant_fsm.v MODULE=test_dominant_fsm
 	rm -rf sim_build && $(MAKE) TEST=test_dominant_datapath.py TOPLEVEL=dominant_datapath VERILOG_SOURCES="$(VERILOG_SOURCES)" MODULE=test_dominant_datapath
 	rm -rf sim_build && $(MAKE) TEST=test_dominant_full.py TOPLEVEL=tb_dominant_wrapper VERILOG_SOURCES="$(VERILOG_SOURCES) tb_dominant_wrapper.v" MODULE=test_dominant_full
+	rm -rf sim_build && $(MAKE) TEST=test_vga_display.py TOPLEVEL=tb_vga_wrapper VERILOG_SOURCES="../vga/vga_top.v ../vga/counter.v ../vga/display_controller.v ../vga/block_digit_renderer.v tb_vga_wrapper.v" MODULE=test_vga_display
 	@echo ""
 	@echo "=========================================="
 	@echo "All tests completed!"
@@ -68,4 +69,7 @@ test_dominant_datapath:
 
 test_dominant_full:
 	$(MAKE) TEST=test_dominant_full.py TOPLEVEL=tb_dominant_wrapper VERILOG_SOURCES="$(VERILOG_SOURCES) tb_dominant_wrapper.v" MODULE=test_dominant_full
+
+test_vga_display:
+	$(MAKE) TEST=test_vga_display.py TOPLEVEL=tb_vga_wrapper VERILOG_SOURCES="../vga/vga_top.v ../vga/counter.v ../vga/display_controller.v ../vga/block_digit_renderer.v tb_vga_wrapper.v" MODULE=test_vga_display
 

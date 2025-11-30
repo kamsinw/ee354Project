@@ -18,6 +18,7 @@ module block_digit_renderer (
     wire [9:0] local_x = px - base_x;
     wire [9:0] local_y = py - base_y;
 
+    /* verilator lint_off UNSIGNED */
     wire in_bounds = (local_x >= 0) && (local_x < DIGIT_WIDTH) && 
                      (local_y >= 0) && (local_y < DIGIT_HEIGHT);
 
@@ -38,6 +39,7 @@ module block_digit_renderer (
 
     wire segment_f = in_bounds && (local_x >= 0) && (local_x < SEGMENT_THICKNESS) &&
                      (local_y >= SEGMENT_THICKNESS) && (local_y < (DIGIT_HEIGHT/2 - SEGMENT_THICKNESS/2));
+    /* verilator lint_on UNSIGNED */
 
     wire segment_g = in_bounds && (local_y >= (DIGIT_HEIGHT/2 - SEGMENT_THICKNESS/2)) && (local_y < (DIGIT_HEIGHT/2 + SEGMENT_THICKNESS/2)) &&
                      (local_x >= SEGMENT_THICKNESS) && (local_x < (DIGIT_WIDTH - SEGMENT_THICKNESS));

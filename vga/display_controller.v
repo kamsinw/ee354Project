@@ -34,10 +34,12 @@ module display_controller (
     wire mode_box = (px >= 10) && (px < (10 + MODE_BOX_SIZE)) && 
                     (py >= 10) && (py < (10 + MODE_BOX_SIZE));
 
-    wire [1:0] matrix_row = (py >= MATRIX_Y && py < MATRIX_Y + 4*CELL_HEIGHT) ? 
-                            ((py - MATRIX_Y) / CELL_HEIGHT) : 2'b00;
-    wire [1:0] matrix_col = (px >= MATRIX_X && px < MATRIX_X + 4*CELL_WIDTH) ? 
-                            ((px - MATRIX_X) / CELL_WIDTH) : 2'b00;
+    wire [9:0] matrix_row_temp = (py >= MATRIX_Y && py < MATRIX_Y + 4*CELL_HEIGHT) ? 
+                                  ((py - MATRIX_Y) / CELL_HEIGHT) : 10'd0;
+    wire [1:0] matrix_row = matrix_row_temp[1:0];
+    wire [9:0] matrix_col_temp = (px >= MATRIX_X && px < MATRIX_X + 4*CELL_WIDTH) ? 
+                                 ((px - MATRIX_X) / CELL_WIDTH) : 10'd0;
+    wire [1:0] matrix_col = matrix_col_temp[1:0];
     
     wire in_matrix_cell = (px >= MATRIX_X) && (px < MATRIX_X + 4*CELL_WIDTH) &&
                           (py >= MATRIX_Y) && (py < MATRIX_Y + 4*CELL_HEIGHT);
@@ -48,8 +50,9 @@ module display_controller (
     wire in_vector_cell = (px >= VECTOR_X) && (px < VECTOR_X + CELL_WIDTH) &&
                           (py >= VECTOR_Y) && (py < VECTOR_Y + 4*CELL_HEIGHT);
     
-    wire [1:0] vector_row = (py >= VECTOR_Y && py < VECTOR_Y + 4*CELL_HEIGHT) ?
-                            ((py - VECTOR_Y) / CELL_HEIGHT) : 2'b00;
+    wire [9:0] vector_row_temp = (py >= VECTOR_Y && py < VECTOR_Y + 4*CELL_HEIGHT) ?
+                                  ((py - VECTOR_Y) / CELL_HEIGHT) : 10'd0;
+    wire [1:0] vector_row = vector_row_temp[1:0];
     
     wire [9:0] vec_cell_x = px - VECTOR_X;
     wire [9:0] vec_cell_y = py - VECTOR_Y - (vector_row * CELL_HEIGHT);
@@ -102,13 +105,76 @@ module display_controller (
     wire [15:0] matrix_abs = (matrix_val < 0) ? -matrix_val : matrix_val;
     wire [15:0] vector_abs = (vector_val < 0) ? -vector_val : vector_val;
     
-    wire [3:0] matrix_hundreds = (matrix_abs >= 100) ? ((matrix_abs / 100) % 10) : 4'd0;
-    wire [3:0] matrix_tens = (matrix_abs >= 10) ? ((matrix_abs / 10) % 10) : 4'd0;
-    wire [3:0] matrix_ones = matrix_abs % 10;
+    // Simplified digit extraction using comparisons instead of division
+    // Matrix hundreds digit (0-9)
+    wire [3:0] matrix_hundreds = 
+        (matrix_abs >= 900) ? 4'd9 :
+        (matrix_abs >= 800) ? 4'd8 :
+        (matrix_abs >= 700) ? 4'd7 :
+        (matrix_abs >= 600) ? 4'd6 :
+        (matrix_abs >= 500) ? 4'd5 :
+        (matrix_abs >= 400) ? 4'd4 :
+        (matrix_abs >= 300) ? 4'd3 :
+        (matrix_abs >= 200) ? 4'd2 :
+        (matrix_abs >= 100) ? 4'd1 : 4'd0;
     
-    wire [3:0] vector_hundreds = (vector_abs >= 100) ? ((vector_abs / 100) % 10) : 4'd0;
-    wire [3:0] vector_tens = (vector_abs >= 10) ? ((vector_abs / 10) % 10) : 4'd0;
-    wire [3:0] vector_ones = vector_abs % 10;
+    // Matrix remainder after hundreds (0-99)
+    // Optimize: 100 = 64 + 32 + 4 = (x << 6) + (x << 5) + (x << 2)
+    wire [15:0] matrix_hundreds_100 = ({12'd0, matrix_hundreds} << 6) + ({12'd0, matrix_hundreds} << 5) + ({12'd0, matrix_hundreds} << 2);
+    wire [15:0] matrix_rem_h = matrix_abs - matrix_hundreds_100;
+    
+    // Matrix tens digit (0-9)
+    wire [3:0] matrix_tens = 
+        (matrix_rem_h >= 90) ? 4'd9 :
+        (matrix_rem_h >= 80) ? 4'd8 :
+        (matrix_rem_h >= 70) ? 4'd7 :
+        (matrix_rem_h >= 60) ? 4'd6 :
+        (matrix_rem_h >= 50) ? 4'd5 :
+        (matrix_rem_h >= 40) ? 4'd4 :
+        (matrix_rem_h >= 30) ? 4'd3 :
+        (matrix_rem_h >= 20) ? 4'd2 :
+        (matrix_rem_h >= 10) ? 4'd1 : 4'd0;
+    
+    // Matrix ones digit (0-9)
+    // Optimize: 10 = 8 + 2 = (x << 3) + (x << 1)
+    wire [15:0] matrix_tens_10 = ({12'd0, matrix_tens} << 3) + ({12'd0, matrix_tens} << 1);
+    wire [15:0] matrix_ones_temp = matrix_rem_h - matrix_tens_10;
+    wire [3:0] matrix_ones = matrix_ones_temp[3:0];
+    
+    // Vector hundreds digit (0-9)
+    wire [3:0] vector_hundreds = 
+        (vector_abs >= 900) ? 4'd9 :
+        (vector_abs >= 800) ? 4'd8 :
+        (vector_abs >= 700) ? 4'd7 :
+        (vector_abs >= 600) ? 4'd6 :
+        (vector_abs >= 500) ? 4'd5 :
+        (vector_abs >= 400) ? 4'd4 :
+        (vector_abs >= 300) ? 4'd3 :
+        (vector_abs >= 200) ? 4'd2 :
+        (vector_abs >= 100) ? 4'd1 : 4'd0;
+    
+    // Vector remainder after hundreds (0-99)
+    // Optimize: 100 = 64 + 32 + 4 = (x << 6) + (x << 5) + (x << 2)
+    wire [15:0] vector_hundreds_100 = ({12'd0, vector_hundreds} << 6) + ({12'd0, vector_hundreds} << 5) + ({12'd0, vector_hundreds} << 2);
+    wire [15:0] vector_rem_h = vector_abs - vector_hundreds_100;
+    
+    // Vector tens digit (0-9)
+    wire [3:0] vector_tens = 
+        (vector_rem_h >= 90) ? 4'd9 :
+        (vector_rem_h >= 80) ? 4'd8 :
+        (vector_rem_h >= 70) ? 4'd7 :
+        (vector_rem_h >= 60) ? 4'd6 :
+        (vector_rem_h >= 50) ? 4'd5 :
+        (vector_rem_h >= 40) ? 4'd4 :
+        (vector_rem_h >= 30) ? 4'd3 :
+        (vector_rem_h >= 20) ? 4'd2 :
+        (vector_rem_h >= 10) ? 4'd1 : 4'd0;
+    
+    // Vector ones digit (0-9)
+    // Optimize: 10 = 8 + 2 = (x << 3) + (x << 1)
+    wire [15:0] vector_tens_10 = ({12'd0, vector_tens} << 3) + ({12'd0, vector_tens} << 1);
+    wire [15:0] vector_ones_temp = vector_rem_h - vector_tens_10;
+    wire [3:0] vector_ones = vector_ones_temp[3:0];
 
     wire [9:0] digit_area_x = (cell_x >= 10) ? (cell_x - 10) : 0;
     wire [9:0] digit_area_y = (cell_y >= 10) ? (cell_y - 10) : 0;
@@ -171,6 +237,7 @@ module display_controller (
         .pixel_on(vector_digit_pixel)
     );
 
+    /* verilator lint_off UNSIGNED */
     wire sign_bar_matrix = in_matrix_cell && (digit_area_x >= 0) && (digit_area_x < 8) &&
                            (digit_area_y >= DIGIT_HEIGHT/2 - 2) && (digit_area_y < DIGIT_HEIGHT/2 + 2) &&
                            (matrix_val < 0);
@@ -178,55 +245,51 @@ module display_controller (
     wire sign_bar_vector = in_vector_cell && (vec_digit_area_x >= 0) && (vec_digit_area_x < 8) &&
                           (vec_digit_area_y >= DIGIT_HEIGHT/2 - 2) && (vec_digit_area_y < DIGIT_HEIGHT/2 + 2) &&
                           (vector_val < 0);
+    /* verilator lint_on UNSIGNED */
 
+    // Combine conditions with same outputs for better timing
+    wire white_pixel = (matrix_border || vector_border) ||
+                       (in_matrix_cell && in_digit_area && matrix_digit_pixel) ||
+                       sign_bar_matrix ||
+                       (in_vector_cell && in_vec_digit_area && vector_digit_pixel) ||
+                       sign_bar_vector;
+    
+    wire yellow_pixel = cursor_border || (mode_box && (sw0 == 1'b0));
+    wire green_pixel = mode_box && (sw0 == 1'b1);
+    
     always @(*) begin
         if (!visible) begin
+            // Black when not visible
             red = 4'b0000;
             green = 4'b0000;
             blue = 4'b0000;
-        end else if (mode_box) begin
-            if (sw0 == 1'b0) begin
-                red = 4'b1111;
-                green = 4'b1111;
-                blue = 4'b0000;
-            end else begin
-                red = 4'b0000;
-                green = 4'b1111;
-                blue = 4'b0000;
-            end
-        end else if (cursor_border) begin
+        end else if (white_pixel) begin
+            // White for borders, digits, and sign bars
+            red = 4'b1111;
+            green = 4'b1111;
+            blue = 4'b1111;
+        end else if (yellow_pixel) begin
+            // Yellow for cursor border or edit mode box
             red = 4'b1111;
             green = 4'b1111;
             blue = 4'b0000;
-        end else if (matrix_border || vector_border) begin
-            red = 4'b1111;
+        end else if (green_pixel) begin
+            // Green for run mode box
+            red = 4'b0000;
             green = 4'b1111;
-            blue = 4'b1111;
-        end else if (in_matrix_cell && in_digit_area && matrix_digit_pixel) begin
-            red = 4'b1111;
-            green = 4'b1111;
-            blue = 4'b1111;
-        end else if (sign_bar_matrix) begin
-            red = 4'b1111;
-            green = 4'b1111;
-            blue = 4'b1111;
-        end else if (in_vector_cell && in_vec_digit_area && vector_digit_pixel) begin
-            red = 4'b1111;
-            green = 4'b1111;
-            blue = 4'b1111;
-        end else if (sign_bar_vector) begin
-            red = 4'b1111;
-            green = 4'b1111;
-            blue = 4'b1111;
+            blue = 4'b0000;
         end else if (in_matrix_cell) begin
+            // Blue background for matrix cells
             red = 4'b0000;
             green = 4'b0000;
             blue = 4'b0100;
         end else if (in_vector_cell) begin
+            // Gray background for vector cells
             red = 4'b0010;
             green = 4'b0010;
             blue = 4'b0010;
         end else begin
+            // Black background
             red = 4'b0000;
             green = 4'b0000;
             blue = 4'b0000;
