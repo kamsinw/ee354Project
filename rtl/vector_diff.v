@@ -1,8 +1,8 @@
 `timescale 1ns / 1ps
 
-// vector_diff.v - 
 module vector_diff #(parameter WIDTH = 16) (
     input  wire                      clk,
+    input  wire                      reset,
     input  wire                      start,
     input  wire signed [4*WIDTH-1:0] V_new,
     input  wire signed [4*WIDTH-1:0] V_old,
@@ -26,10 +26,14 @@ module vector_diff #(parameter WIDTH = 16) (
     reg done_reg;
     
     always @(posedge clk) begin
-        if (start) begin
+        if (reset) begin
+            max_diff <= {WIDTH{1'b0}};
+            done <= 1'b0;
+            done_reg <= 1'b0;
+        end else if (start) begin
             max_diff <= maxv;
-            done_reg <= 1;
-            done     <= 1;
+            done_reg <= 1'b1;
+            done <= 1'b1;
         end else begin
             done <= done_reg;
         end

@@ -1,7 +1,5 @@
 `timescale 1ns / 1ps
 
-// top_eigenvector.v - Top-level module for Nexys A7
-
 module top_eigenvector (
     input  wire        clk,
     input  wire        reset,
@@ -26,7 +24,11 @@ module top_eigenvector (
     wire clk_1k;
     
     always @(posedge clk) begin
-        clk_div <= clk_div + 1'b1;
+        if (reset) begin
+            clk_div <= 20'd0;
+        end else begin
+            clk_div <= clk_div + 1'b1;
+        end
     end
     
     assign clk_1k = clk_div[16];
@@ -35,22 +37,40 @@ module top_eigenvector (
     reg btnl_pulse, btnr_pulse, btnu_pulse, btnd_pulse, btnc_pulse;
     
     always @(posedge clk_1k) begin
-        btnl_r <= btnl;
-        btnr_r <= btnr;
-        btnu_r <= btnu;
-        btnd_r <= btnd;
-        btnc_r <= btnc;
-        btnl_d <= btnl_r;
-        btnr_d <= btnr_r;
-        btnu_d <= btnu_r;
-        btnd_d <= btnd_r;
-        btnc_d <= btnc_r;
-        btnl_pulse <= btnl_r & ~btnl_d;
-        btnr_pulse <= btnr_r & ~btnr_d;
-        btnu_pulse <= btnu_r & ~btnu_d;
-        btnd_pulse <= btnd_r & ~btnd_d;
-        btnc_pulse <= btnc_r & ~btnc_d;
-    end// all button debouncing
+        if (reset) begin
+            btnl_r <= 1'b0;
+            btnr_r <= 1'b0;
+            btnu_r <= 1'b0;
+            btnd_r <= 1'b0;
+            btnc_r <= 1'b0;
+            btnl_d <= 1'b0;
+            btnr_d <= 1'b0;
+            btnu_d <= 1'b0;
+            btnd_d <= 1'b0;
+            btnc_d <= 1'b0;
+            btnl_pulse <= 1'b0;
+            btnr_pulse <= 1'b0;
+            btnu_pulse <= 1'b0;
+            btnd_pulse <= 1'b0;
+            btnc_pulse <= 1'b0;
+        end else begin
+            btnl_r <= btnl;
+            btnr_r <= btnr;
+            btnu_r <= btnu;
+            btnd_r <= btnd;
+            btnc_r <= btnc;
+            btnl_d <= btnl_r;
+            btnr_d <= btnr_r;
+            btnu_d <= btnu_r;
+            btnd_d <= btnd_r;
+            btnc_d <= btnc_r;
+            btnl_pulse <= btnl_r & ~btnl_d;
+            btnr_pulse <= btnr_r & ~btnr_d;
+            btnu_pulse <= btnu_r & ~btnu_d;
+            btnd_pulse <= btnd_r & ~btnd_d;
+            btnc_pulse <= btnc_r & ~btnc_d;
+        end
+    end
     
     reg [1:0] edit_row;
     reg [1:0] edit_col;
@@ -61,14 +81,13 @@ module top_eigenvector (
     integer i, j;
     always @(posedge clk) begin
         if (reset) begin
-            for (i = 0; i < 4; i = i + 1) begin
-                for (j = 0; j < 4; j = j + 1) begin
-                    matrix_a[i][j] <= 16'sd1;
-                end
-            end
+            matrix_a[0][0] <= 16'sd4; matrix_a[0][1] <= 16'sd1; matrix_a[0][2] <= 16'sd1; matrix_a[0][3] <= 16'sd1;
+            matrix_a[1][0] <= 16'sd1; matrix_a[1][1] <= 16'sd4; matrix_a[1][2] <= 16'sd1; matrix_a[1][3] <= 16'sd1;
+            matrix_a[2][0] <= 16'sd1; matrix_a[2][1] <= 16'sd1; matrix_a[2][2] <= 16'sd4; matrix_a[2][3] <= 16'sd1;
+            matrix_a[3][0] <= 16'sd1; matrix_a[3][1] <= 16'sd1; matrix_a[3][2] <= 16'sd1; matrix_a[3][3] <= 16'sd4;
             for (i = 0; i < 4; i = i + 1) begin
                 vector_v[i] <= 16'sd1;
-            end// init matrix and vector to 1
+            end
         end
     end
     
@@ -83,7 +102,7 @@ module top_eigenvector (
     always @(posedge clk_1k) begin
         if (reset) begin
             edit_row <= 2'b00;
-            edit_col <= 2'b00;//cursor lo
+            edit_col <= 2'b00;
         end else if (~sw0) begin
             if (btnu_pulse) begin
                 if (edit_row > 2'b00)
@@ -108,16 +127,22 @@ module top_eigenvector (
     reg [1:0] edit_row_prev;
     
     always @(posedge clk) begin
-        sw0_prev <= sw0;
-        sw1_prev <= sw1;
-        edit_row_prev <= edit_row;
+        if (reset) begin
+            sw0_prev <= 1'b0;
+            sw1_prev <= 1'b0;
+            edit_row_prev <= 2'b00;
+        end else begin
+            sw0_prev <= sw0;
+            sw1_prev <= sw1;
+            edit_row_prev <= edit_row;
+        end
     end
     
     always @(posedge clk) begin
         if (reset) begin
             edit_val <= 16'sd0;
         end else if (~sw0) begin
-            if ((sw0_prev & ~sw0) || (sw1_prev != sw1) || (edit_row_prev != edit_row)) begin// in edit mode
+            if ((sw0_prev & ~sw0) || (sw1_prev != sw1) || (edit_row_prev != edit_row)) begin
                 if (sw1 == 1'b0) begin
                     edit_val <= matrix_a[edit_row][edit_col];
                 end else begin
@@ -148,7 +173,11 @@ module top_eigenvector (
     wire sw0_edge;
     
     always @(posedge clk) begin
-        sw0_r <= sw0;
+        if (reset) begin
+            sw0_r <= 1'b0;
+        end else begin
+            sw0_r <= sw0;
+        end
     end
     
     assign sw0_edge = sw0 & ~sw0_r;

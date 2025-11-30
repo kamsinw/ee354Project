@@ -1,9 +1,8 @@
 `timescale 1ns / 1ps
 
-// matrix_vector_mult.v - 
-
 module matrix_vector_mult (
     input  wire        clk,
+    input  wire        reset,
     input  wire        start,
     input  wire signed [16*16-1:0] A,
     input  wire signed [4*16-1:0] V,
@@ -34,31 +33,46 @@ module matrix_vector_mult (
     wire signed [15:0] V3 = V[63:48];
 
     reg [1:0] row;
+    reg done_reg;
 
     always @(posedge clk) begin
-        if (start) begin
-            row  <= 0;
-            done <= 0;
+        if (reset) begin
+            row <= 2'b00;
+            Y <= 64'd0;
+            done <= 1'b0;
+            done_reg <= 1'b0;
+        end else if (start) begin
+            row <= 2'b00;
+            done <= 1'b0;
+            done_reg <= 1'b0;
         end else begin
             case (row)
-                0: begin
+                2'b00: begin
                     Y <= {Y[63:16], A00*V0 + A01*V1 + A02*V2 + A03*V3};
-                    row <= 1;
-                    done <= 0;
+                    row <= 2'b01;
+                    done <= 1'b0;
+                    done_reg <= 1'b0;
                 end
-                1: begin
+                2'b01: begin
                     Y <= {Y[63:32], A10*V0 + A11*V1 + A12*V2 + A13*V3, Y[15:0]};
-                    row <= 2;
-                    done <= 0;
+                    row <= 2'b10;
+                    done <= 1'b0;
+                    done_reg <= 1'b0;
                 end
-                2: begin
+                2'b10: begin
                     Y <= {Y[63:48], A20*V0 + A21*V1 + A22*V2 + A23*V3, Y[31:0]};
-                    row <= 3;
-                    done <= 0;
+                    row <= 2'b11;
+                    done <= 1'b0;
+                    done_reg <= 1'b0;
                 end
-                3: begin
-                    Y <= {A30*V0 + A31*V1 + A32*V2 + A33*V3, Y[47:0]};
-                    done <= 1;
+                2'b11: begin
+                    if (!done_reg) begin
+                        Y <= {A30*V0 + A31*V1 + A32*V2 + A33*V3, Y[47:0]};
+                        done_reg <= 1'b1;
+                        done <= 1'b1;
+                    end else begin
+                        done <= 1'b1;
+                    end
                 end
             endcase
         end

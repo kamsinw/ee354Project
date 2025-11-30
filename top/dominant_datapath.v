@@ -1,7 +1,5 @@
 `timescale 1ns / 1ps
 
-// dominant_datapath.v - Power iteration datapath 
-
 module dominant_datapath (
     input  wire        clk,
     input  wire        reset,
@@ -35,14 +33,19 @@ module dominant_datapath (
     reg first_iter;
     
     wire signed [4*16-1:0] init_vec = {16'sd1, 16'sd1, 16'sd1, 16'sd1};
-    
     wire signed [4*16-1:0] v_old_in = first_iter ? init_vec : v_new;
     
     always @(posedge clk) begin
         if (reset) begin
             first_iter <= 1'b1;
-        end else if (load_v_old) begin
-            first_iter <= 1'b0;
+            y_reg <= 64'd0;
+        end else begin
+            if (load_v_old) begin
+                first_iter <= 1'b0;
+            end
+            if (load_y) begin
+                y_reg <= y_vec;
+            end
         end
     end
 
@@ -56,6 +59,7 @@ module dominant_datapath (
 
     matrix_vector_mult matmul (
         .clk(clk),
+        .reset(reset),
         .start(start_mult),
         .A(A),
         .V(v_old),
@@ -63,16 +67,9 @@ module dominant_datapath (
         .done(mul_done)
     );
 
-    always @(posedge clk) begin
-        if (reset) begin
-            y_reg <= 64'd0;
-        end else if (load_y) begin
-            y_reg <= y_vec;
-        end
-    end
-
     vector_scale #(.WIDTH(16)) vscale (
         .clk(clk),
+        .reset(reset),
         .start(start_scale),
         .V_in(y_reg),
         .V_out(v_new),
@@ -81,6 +78,7 @@ module dominant_datapath (
 
     vector_diff vdiff (
         .clk(clk),
+        .reset(reset),
         .start(start_diff),
         .V_new(v_new),
         .V_old(v_old),
