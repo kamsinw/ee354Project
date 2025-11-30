@@ -23,12 +23,15 @@ module vector_diff #(parameter WIDTH = 16) (
         .max_val(maxv)
     );
 
+    reg done_reg;
+    
     always @(posedge clk) begin
         if (start) begin
             max_diff <= maxv;
+            done_reg <= 1;
             done     <= 1;
         end else begin
-            done <= 0;
+            done <= done_reg;
         end
     end
 
