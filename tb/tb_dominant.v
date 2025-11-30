@@ -132,52 +132,48 @@ module tb_dominant;
         prev_ratio = 0.0;
         iteration_count = 0;
         
-        // Monitor for iteration completions (diff_done indicates end of iteration)
+        // Monitor for iteration completions
         fork
-            // Timeout after reasonable time
             begin
-                #(CLK_PERIOD * 10000);  // 10000 cycles timeout
+                #(CLK_PERIOD * 50000);
                 $display("\n*** TIMEOUT: Test took too long ***");
+                $display("Current state signals: mul_done=%b, scale_done=%b, diff_done=%b, done=%b", 
+                         mul_done, scale_done, diff_done, done);
                 $finish;
             end
             
-            // Main iteration monitor
             begin
                 while (iteration_count < 50) begin
-                    // Wait for diff_done to indicate iteration complete
-                    @(posedge diff_done);
-                    #(CLK_PERIOD * 2);  // Wait for max_d to be valid
-                    
-                    iteration_count = iteration_count + 1;
-                    
-                    // Calculate vector magnitude and ratio
-                    v_mag = $sqrt($itor(v0)*$itor(v0) + $itor(v1)*$itor(v1) + 
-                                  $itor(v2)*$itor(v2) + $itor(v3)*$itor(v3));
-                    if (v0 != 0) begin
-                        curr_ratio = $itor(v1) / $itor(v0);
-                    end else begin
-                        curr_ratio = 0;
+                    @(posedge clk);
+                    if (diff_done) begin
+                        #(CLK_PERIOD * 2);
+                        
+                        iteration_count = iteration_count + 1;
+                        
+                        v_mag = $itor(v0)*$itor(v0) + $itor(v1)*$itor(v1) + 
+                                $itor(v2)*$itor(v2) + $itor(v3)*$itor(v3);
+                        if (v0 != 0) begin
+                            curr_ratio = $itor(v1) / $itor(v0);
+                        end else begin
+                            curr_ratio = 0;
+                        end
+                        
+                        $display("Iteration %2d: v = [%6d, %6d, %6d, %6d] | max_diff = %6d | ratio = %.6f",
+                                 iteration_count, v0, v1, v2, v3, max_d_out, curr_ratio);
+                        
+                        if (max_d_out < epsilon) begin
+                            $display("\n*** CONVERGED after %d iterations ***", iteration_count);
+                            $display("Final eigenvector: [%d, %d, %d, %d]", v0, v1, v2, v3);
+                            disable fork;
+                        end
+                        
+                        if (iteration_count > 5 && ((curr_ratio - prev_ratio) < 0 ? -(curr_ratio - prev_ratio) : (curr_ratio - prev_ratio)) < 0.0001) begin
+                            $display("*** Vector direction stabilized ***");
+                        end
+                        
+                        prev_ratio = curr_ratio;
+                        #(CLK_PERIOD * 5);
                     end
-                    
-                    $display("Iteration %2d: v = [%6d, %6d, %6d, %6d] | max_diff = %6d | ratio = %.6f",
-                             iteration_count, v0, v1, v2, v3, max_d_out, curr_ratio);
-                    
-                    // Check for convergence
-                    if (max_d_out < epsilon) begin
-                        $display("\n*** CONVERGED after %d iterations ***", iteration_count);
-                        $display("Final eigenvector: [%d, %d, %d, %d]", v0, v1, v2, v3);
-                        disable fork;
-                    end
-                    
-                    // Check if ratio is stabilizing (convergence indicator)
-                    if (iteration_count > 5 && ((curr_ratio - prev_ratio) < 0 ? -(curr_ratio - prev_ratio) : (curr_ratio - prev_ratio)) < 0.0001) begin
-                        $display("*** Vector direction stabilized ***");
-                    end
-                    
-                    prev_ratio = curr_ratio;
-                    
-                    // Wait a bit before next iteration check
-                    #(CLK_PERIOD * 5);
                 end
                 
                 if (iteration_count >= 50) begin
