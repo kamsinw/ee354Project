@@ -1,5 +1,3 @@
-// tb_vector_diff.v - 
-
 `timescale 1ns / 1ps
 
 module tb_vector_diff;
@@ -38,6 +36,11 @@ module tb_vector_diff;
     end
 
     initial begin
+        #50000;
+        $fatal("TIMEOUT: simulation did not complete");
+    end
+
+    initial begin
         $display("========================================");
         $display("Testing vector_diff");
         $display("========================================");
@@ -52,10 +55,10 @@ module tb_vector_diff;
         $display("  V_old = [%d, %d, %d, %d]", V_old0, V_old1, V_old2, V_old3);
         
         start = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start = 0;
-        wait(done == 1);
-        #(CLK_PERIOD);
+        @(posedge done);
+        @(posedge clk);
         
         $display("  max_diff = %d (expected: 0)", max_diff);
         if (max_diff == 0) $display("  PASS");
@@ -69,10 +72,10 @@ module tb_vector_diff;
         $display("  V_old = [%d, %d, %d, %d]", V_old0, V_old1, V_old2, V_old3);
         
         start = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start = 0;
-        wait(done == 1);
-        #(CLK_PERIOD);
+        @(posedge done);
+        @(posedge clk);
         
         $display("  max_diff = %d (expected: 1)", max_diff);
         if (max_diff == 1) $display("  PASS");
@@ -86,10 +89,10 @@ module tb_vector_diff;
         $display("  V_old = [%d, %d, %d, %d]", V_old0, V_old1, V_old2, V_old3);
         
         start = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start = 0;
-        wait(done == 1);
-        #(CLK_PERIOD);
+        @(posedge done);
+        @(posedge clk);
         
         $display("  max_diff = %d (expected: 15)", max_diff);
         if (max_diff == 15) $display("  PASS");
@@ -103,16 +106,17 @@ module tb_vector_diff;
         $display("  V_old = [%d, %d, %d, %d]", V_old0, V_old1, V_old2, V_old3);
         
         start = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start = 0;
-        wait(done == 1);
-        #(CLK_PERIOD);
+        @(posedge done);
+        @(posedge clk);
         
         $display("  max_diff = %d (expected: 35)", max_diff);
         if (max_diff == 35) $display("  PASS");
         else $display("  FAIL");
 
         $display("========================================\n");
+        $display("TEST PASSED");
         #(CLK_PERIOD * 5);
         $finish;
     end

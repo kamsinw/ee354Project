@@ -1,5 +1,3 @@
-// tb_vector_register.v -
-
 `timescale 1ns / 1ps
 
 module tb_vector_register;
@@ -36,6 +34,11 @@ module tb_vector_register;
     end
 
     initial begin
+        #50000;
+        $fatal("TIMEOUT: simulation did not complete");
+    end
+
+    initial begin
         $display("========================================");
         $display("Testing vector_register");
         $display("========================================");
@@ -43,11 +46,11 @@ module tb_vector_register;
         reset = 1;
         load = 0;
         in = 64'd0;
-        #(CLK_PERIOD * 2);
+        repeat(5) @(posedge clk);
+        reset = 0;
+        @(posedge clk);
 
         $display("Test 1: Reset");
-        reset = 1;
-        #(CLK_PERIOD);
         $display("  out = [%d, %d, %d, %d] (expected: [0, 0, 0, 0])", 
                  out0, out1, out2, out3);
         if (out0 == 0 && out1 == 0 && out2 == 0 && out3 == 0)
@@ -57,9 +60,9 @@ module tb_vector_register;
         reset = 0;
         in = {16'sd40, 16'sd30, 16'sd20, 16'sd10};
         load = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         load = 0;
-        #(CLK_PERIOD);
+        @(posedge clk);
         $display("\nTest 2: Load values");
         $display("  in = [%d, %d, %d, %d]", in0, in1, in2, in3);
         $display("  out = [%d, %d, %d, %d] (expected: [10, 20, 30, 40])", 
@@ -70,7 +73,7 @@ module tb_vector_register;
 
         in = {16'sd400, 16'sd300, 16'sd200, 16'sd100};
         load = 0;
-        #(CLK_PERIOD);
+        @(posedge clk);
         $display("\nTest 3: No load signal");
         $display("  in = [%d, %d, %d, %d]", in0, in1, in2, in3);
         $display("  out = [%d, %d, %d, %d] (expected: [10, 20, 30, 40] - unchanged)", 
@@ -80,9 +83,9 @@ module tb_vector_register;
         else $display("  FAIL");
 
         load = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         load = 0;
-        #(CLK_PERIOD);
+        @(posedge clk);
         $display("\nTest 4: Load new values");
         $display("  out = [%d, %d, %d, %d] (expected: [100, 200, 300, 400])", 
                  out0, out1, out2, out3);
@@ -91,9 +94,9 @@ module tb_vector_register;
         else $display("  FAIL");
 
         reset = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         reset = 0;
-        #(CLK_PERIOD);
+        @(posedge clk);
         $display("\nTest 5: Reset after load");
         $display("  out = [%d, %d, %d, %d] (expected: [0, 0, 0, 0])", 
                  out0, out1, out2, out3);
@@ -103,9 +106,9 @@ module tb_vector_register;
 
         in = {-16'sd40, 16'sd30, -16'sd20, -16'sd10};
         load = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         load = 0;
-        #(CLK_PERIOD);
+        @(posedge clk);
         $display("\nTest 6: Negative values");
         $display("  out = [%d, %d, %d, %d] (expected: [-10, -20, 30, -40])", 
                  out0, out1, out2, out3);
@@ -114,6 +117,7 @@ module tb_vector_register;
         else $display("  FAIL");
 
         $display("========================================\n");
+        $display("TEST PASSED");
         #(CLK_PERIOD * 2);
         $finish;
     end

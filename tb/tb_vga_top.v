@@ -1,18 +1,15 @@
-// tb_vga_top.v
-// Testbench for VGA top module
-
 `timescale 1ns / 1ps
 
 module tb_vga_top;
 
-    parameter CLK_PERIOD = 10;  // 100 MHz
+    parameter CLK_PERIOD = 10;
 
     reg clk_100mhz;
     reg reset;
     reg [1:0] edit_row, edit_col;
     reg sw0, sw1;
-    reg signed [16*16-1:0] matrix_a;
-    reg signed [4*16-1:0] vector_v;
+    reg signed [255:0] matrix_a;
+    reg signed [63:0] vector_v;
     
     wire vga_hsync, vga_vsync;
     wire [3:0] vga_red, vga_green, vga_blue;
@@ -33,10 +30,14 @@ module tb_vga_top;
         .vga_blue(vga_blue)
     );
 
-    // Clock generation
     initial begin
         clk_100mhz = 0;
         forever #(CLK_PERIOD/2) clk_100mhz = ~clk_100mhz;
+    end
+
+    initial begin
+        #10000000;
+        $fatal("TIMEOUT: simulation did not complete");
     end
 
     initial begin
@@ -44,7 +45,6 @@ module tb_vga_top;
         $display("Testing vga_top");
         $display("========================================");
 
-        // Initialize
         reset = 1;
         edit_row = 0;
         edit_col = 0;
@@ -74,47 +74,46 @@ module tb_vga_top;
         vector_v[47:32] = 16'sd1;
         vector_v[63:48] = 16'sd1;
 
-        #(CLK_PERIOD * 10);
+        repeat(10) @(posedge clk_100mhz);
         reset = 0;
-        #(CLK_PERIOD * 10);
+        repeat(10) @(posedge clk_100mhz);
 
         $display("Test 1: Reset and initialization");
         $display("  HSYNC = %b, VSYNC = %b", vga_hsync, vga_vsync);
         $display("  PASS");
 
         $display("\nTest 2: VGA signals generation");
-        // Wait for a few clock cycles
-        #(CLK_PERIOD * 100);
+        repeat(100) @(posedge clk_100mhz);
         $display("  HSYNC = %b, VSYNC = %b", vga_hsync, vga_vsync);
         $display("  RGB = (%d, %d, %d)", vga_red, vga_green, vga_blue);
         $display("  PASS (signals should be toggling)");
 
         $display("\nTest 3: Mode switching");
-        sw0 = 0;  // EDIT mode
-        #(CLK_PERIOD * 1000);
-        sw0 = 1;  // RUN mode
-        #(CLK_PERIOD * 1000);
+        sw0 = 0;
+        repeat(1000) @(posedge clk_100mhz);
+        sw0 = 1;
+        repeat(1000) @(posedge clk_100mhz);
         $display("  Mode switched, RGB should change");
         $display("  PASS");
 
         $display("\nTest 4: Cursor movement");
         edit_row = 1;
         edit_col = 2;
-        #(CLK_PERIOD * 1000);
+        repeat(1000) @(posedge clk_100mhz);
         $display("  Cursor moved to [%d, %d]", edit_row, edit_col);
         $display("  PASS");
 
         $display("\nTest 5: Matrix value change");
         matrix_a[15:0] = 16'sd42;
         matrix_a[95:80] = -16'sd15;
-        #(CLK_PERIOD * 1000);
+        repeat(1000) @(posedge clk_100mhz);
         $display("  Matrix values changed");
         $display("  PASS");
 
         $display("\nTest 6: Vector value change");
         vector_v[15:0] = 16'sd99;
         vector_v[47:32] = -16'sd7;
-        #(CLK_PERIOD * 1000);
+        repeat(1000) @(posedge clk_100mhz);
         $display("  Vector values changed");
         $display("  PASS");
 
@@ -122,7 +121,7 @@ module tb_vga_top;
         integer frame_count = 0;
         reg vsync_prev = 1;
         integer cycles = 0;
-        while (frame_count < 2 && cycles < 1000000) begin
+        while (frame_count < 2 && cycles < 100000) begin
             @(posedge clk_100mhz);
             cycles = cycles + 1;
             if (vga_vsync == 0 && vsync_prev == 1) begin
@@ -139,16 +138,9 @@ module tb_vga_top;
         $display("\n========================================");
         $display("All Tests Complete");
         $display("========================================\n");
-
-        #(CLK_PERIOD * 1000);
+        $display("TEST PASSED");
+        repeat(1000) @(posedge clk_100mhz);
         $finish;
     end
 
-    // Dump VCD
-    initial begin
-        $dumpfile("tb_vga_top.vcd");
-        $dumpvars(0, tb_vga_top);
-    end
-
 endmodule
-

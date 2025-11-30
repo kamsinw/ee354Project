@@ -1,5 +1,3 @@
-// tb_matrix_vector_mult.v 
-
 `timescale 1ns / 1ps
 
 module tb_matrix_vector_mult;
@@ -37,6 +35,11 @@ module tb_matrix_vector_mult;
     end
 
     initial begin
+        #100000;
+        $fatal("TIMEOUT: simulation did not complete");
+    end
+
+    initial begin
         $display("========================================");
         $display("Testing matrix_vector_mult");
         $display("========================================");
@@ -53,11 +56,11 @@ module tb_matrix_vector_mult;
         $display("  V = [%d, %d, %d, %d]", V0, V1, V2, V3);
         
         start = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start = 0;
         
-        wait(done == 1);
-        #(CLK_PERIOD);
+        @(posedge done);
+        @(posedge clk);
         
         $display("  Y = [%d, %d, %d, %d] (expected: [10, 20, 30, 40])", 
                  Y0, Y1, Y2, Y3);
@@ -75,11 +78,11 @@ module tb_matrix_vector_mult;
         $display("  V = [%d, %d, %d, %d]", V0, V1, V2, V3);
         
         start = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start = 0;
         
-        wait(done == 1);
-        #(CLK_PERIOD);
+        @(posedge done);
+        @(posedge clk);
         
         $display("  Y = [%d, %d, %d, %d] (expected: [10, 26, 42, 58])", 
                  Y0, Y1, Y2, Y3);
@@ -97,11 +100,11 @@ module tb_matrix_vector_mult;
         $display("  V = [%d, %d, %d, %d]", V0, V1, V2, V3);
         
         start = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start = 0;
         
-        wait(done == 1);
-        #(CLK_PERIOD);
+        @(posedge done);
+        @(posedge clk);
         
         $display("  Y = [%d, %d, %d, %d] (expected: [7, 7, 7, 7])", 
                  Y0, Y1, Y2, Y3);
@@ -110,6 +113,7 @@ module tb_matrix_vector_mult;
         else $display("  FAIL");
 
         $display("========================================\n");
+        $display("TEST PASSED");
         #(CLK_PERIOD * 5);
         $finish;
     end

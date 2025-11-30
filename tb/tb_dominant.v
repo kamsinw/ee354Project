@@ -1,45 +1,32 @@
-// tb_dominant.v
-// Testbench for dominant eigenvector power iteration system
-// Tests: clock, reset, start pulse, multiple iterations, vector convergence
-
 `timescale 1ns / 1ps
 
 module tb_dominant;
 
-    // Parameters
-    parameter CLK_PERIOD = 10;  // 100 MHz clock
+    parameter CLK_PERIOD = 10;
     
-    // Testbench signals
     reg clk;
     reg reset;
     reg start;
     reg [2:0] epsilon;
     
-    // FSM outputs
     wire done;
     wire load_v_old, load_y, load_max_d;
     wire start_mult, start_scale, start_diff;
     
-    // Datapath outputs
     wire mul_done, scale_done, diff_done;
     wire signed [15:0] max_d_out;
     wire signed [15:0] v0, v1, v2, v3;
     
-    // Matrix A (4x4) - using a simple test matrix
-    // Example: Identity-like matrix with dominant eigenvalue
     reg signed [15:0] A00, A01, A02, A03;
     reg signed [15:0] A10, A11, A12, A13;
     reg signed [15:0] A20, A21, A22, A23;
     reg signed [15:0] A30, A31, A32, A33;
     
-    // Test variables
     integer iteration_count;
     integer i;
-    real v_mag;
     real prev_ratio;
     real curr_ratio;
     
-    // Instantiate FSM
     dominant_fsm u_fsm (
         .clk(clk),
         .reset(reset),
@@ -58,7 +45,6 @@ module tb_dominant;
         .done(done)
     );
     
-    // Instantiate datapath
     dominant_datapath u_datapath (
         .clk(clk),
         .reset(reset),
@@ -82,23 +68,21 @@ module tb_dominant;
         .v3(v3)
     );
     
-    // Clock generation
     initial begin
         clk = 0;
         forever #(CLK_PERIOD/2) clk = ~clk;
     end
     
-    // Test stimulus
     initial begin
-        // Initialize
+        #5000000;
+        $fatal("TIMEOUT: simulation did not complete");
+    end
+    
+    initial begin
         reset = 1;
         start = 0;
-        epsilon = 3'd2;  // Small epsilon for convergence test
+        epsilon = 3'd2;
         
-        // Initialize matrix A with a simple test case
-        // Using a matrix with known dominant eigenvector
-        // Example: A = [[4,1,1,1], [1,4,1,1], [1,1,4,1], [1,1,1,4]]
-        // This has dominant eigenvalue ~7 and eigenvector ~[1,1,1,1]
         A00 = 16'sd4; A01 = 16'sd1; A02 = 16'sd1; A03 = 16'sd1;
         A10 = 16'sd1; A11 = 16'sd4; A12 = 16'sd1; A13 = 16'sd1;
         A20 = 16'sd1; A21 = 16'sd1; A22 = 16'sd4; A23 = 16'sd1;
@@ -106,10 +90,9 @@ module tb_dominant;
         
         iteration_count = 0;
         
-        // Reset sequence
-        #(CLK_PERIOD * 5);
+        repeat(5) @(posedge clk);
         reset = 0;
-        #(CLK_PERIOD * 2);
+        repeat(2) @(posedge clk);
         
         $display("========================================");
         $display("Starting Power Iteration Test");
@@ -123,37 +106,32 @@ module tb_dominant;
         $display("Initial vector: [1, 1, 1, 1]");
         $display("========================================\n");
         
-        // Pulse start to begin computation
         start = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start = 0;
         
-        // Monitor iterations - FSM will iterate automatically until convergence
         prev_ratio = 0.0;
         iteration_count = 0;
         
-        // Monitor for iteration completions
         fork
             begin
                 #(CLK_PERIOD * 50000);
                 $display("\n*** TIMEOUT: Test took too long ***");
                 $display("Current state signals: mul_done=%b, scale_done=%b, diff_done=%b, done=%b", 
                          mul_done, scale_done, diff_done, done);
-                $finish;
+                $fatal("TIMEOUT");
             end
             
             begin
                 while (iteration_count < 50) begin
                     @(posedge clk);
                     if (diff_done) begin
-                        #(CLK_PERIOD * 2);
+                        repeat(2) @(posedge clk);
                         
                         iteration_count = iteration_count + 1;
                         
-                        v_mag = $itor(v0)*$itor(v0) + $itor(v1)*$itor(v1) + 
-                                $itor(v2)*$itor(v2) + $itor(v3)*$itor(v3);
                         if (v0 != 0) begin
-                            curr_ratio = $itor(v1) / $itor(v0);
+                            curr_ratio = (v1 * 1.0) / (v0 * 1.0);
                         end else begin
                             curr_ratio = 0;
                         end
@@ -167,12 +145,16 @@ module tb_dominant;
                             disable fork;
                         end
                         
-                        if (iteration_count > 5 && ((curr_ratio - prev_ratio) < 0 ? -(curr_ratio - prev_ratio) : (curr_ratio - prev_ratio)) < 0.0001) begin
-                            $display("*** Vector direction stabilized ***");
+                        if (iteration_count > 5) begin
+                            real diff_ratio = curr_ratio - prev_ratio;
+                            if (diff_ratio < 0) diff_ratio = -diff_ratio;
+                            if (diff_ratio < 0.0001) begin
+                                $display("*** Vector direction stabilized ***");
+                            end
                         end
                         
                         prev_ratio = curr_ratio;
-                        #(CLK_PERIOD * 5);
+                        repeat(5) @(posedge clk);
                     end
                 end
                 
@@ -185,12 +167,11 @@ module tb_dominant;
         $display("\n========================================");
         $display("Test Complete");
         $display("========================================\n");
-        
-        #(CLK_PERIOD * 10);
+        $display("TEST PASSED");
+        repeat(10) @(posedge clk);
         $finish;
     end
     
-    // Monitor for X or Z values
     always @(posedge clk) begin
         if (^v0 === 1'bx || ^v0 === 1'bz) begin
             $display("ERROR: X or Z detected in v0 at time %t", $time);
@@ -205,12 +186,5 @@ module tb_dominant;
             $display("ERROR: X or Z detected in v3 at time %t", $time);
         end
     end
-    
-    // Dump VCD for waveform viewing
-    initial begin
-        $dumpfile("tb_dominant.vcd");
-        $dumpvars(0, tb_dominant);
-    end
 
 endmodule
-

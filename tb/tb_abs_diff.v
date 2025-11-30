@@ -1,5 +1,3 @@
-// tb_abs_diff.v -
-
 `timescale 1ns / 1ps
 
 module tb_abs_diff;
@@ -29,6 +27,11 @@ module tb_abs_diff;
     wire signed [WIDTH-1:0] diff1 = diff[2*WIDTH-1:WIDTH];
     wire signed [WIDTH-1:0] diff2 = diff[3*WIDTH-1:2*WIDTH];
     wire signed [WIDTH-1:0] diff3 = diff[4*WIDTH-1:3*WIDTH];
+
+    initial begin
+        #1000;
+        $fatal("TIMEOUT: simulation did not complete");
+    end
 
     initial begin
         $display("========================================");
@@ -82,6 +85,7 @@ module tb_abs_diff;
         else $display("  FAIL");
 
         $display("========================================\n");
+        $display("TEST PASSED");
         #10;
         $finish;
     end

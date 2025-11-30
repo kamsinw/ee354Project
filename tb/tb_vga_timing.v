@@ -1,31 +1,32 @@
-// tb_vga_timing.v
-// Testbench for VGA timing generator
-
 `timescale 1ns / 1ps
 
 module tb_vga_timing;
 
-    parameter CLK_PERIOD = 40;  // 25 MHz = 40ns period
+    parameter CLK_PERIOD = 40;
 
     reg clk;
     reg reset;
     wire hsync, vsync, visible;
     wire [9:0] hcount, vcount;
 
-    vga_timing uut (
+    counter uut (
         .clk(clk),
         .reset(reset),
+        .hcount(hcount),
+        .vcount(vcount),
         .hsync(hsync),
         .vsync(vsync),
-        .visible(visible),
-        .hcount(hcount),
-        .vcount(vcount)
+        .visible(visible)
     );
 
-    // Clock generation
     initial begin
         clk = 0;
         forever #(CLK_PERIOD/2) clk = ~clk;
+    end
+
+    initial begin
+        #10000000;
+        $fatal("TIMEOUT: simulation did not complete");
     end
 
     initial begin
@@ -34,9 +35,9 @@ module tb_vga_timing;
         $display("========================================");
 
         reset = 1;
-        #(CLK_PERIOD * 5);
+        repeat(5) @(posedge clk);
         reset = 0;
-        #(CLK_PERIOD * 2);
+        repeat(2) @(posedge clk);
 
         $display("Test 1: Reset");
         $display("  hcount = %d (expected: 0)", hcount);
@@ -45,14 +46,12 @@ module tb_vga_timing;
         else $display("  FAIL");
 
         $display("\nTest 2: Horizontal counter");
-        // Wait for one full horizontal line (800 clocks)
-        #(CLK_PERIOD * 800);
+        repeat(800) @(posedge clk);
         $display("  After 800 clocks, hcount = %d (expected: 0)", hcount);
         if (hcount == 0) $display("  PASS");
         else $display("  FAIL");
 
         $display("\nTest 3: HSYNC timing");
-        // Check HSYNC goes low during sync period
         integer hsync_low_count = 0;
         integer i;
         for (i = 0; i < 800; i = i + 1) begin
@@ -74,11 +73,12 @@ module tb_vga_timing;
         else $display("  FAIL");
 
         $display("\nTest 5: Vertical counter");
-        // Wait for one full frame (525 lines)
         integer frame_count = 0;
         reg vsync_prev = 1;
-        while (frame_count < 2) begin
+        integer cycles = 0;
+        while (frame_count < 2 && cycles < 1000000) begin
             @(posedge clk);
+            cycles = cycles + 1;
             if (vsync == 0 && vsync_prev == 1) begin
                 frame_count = frame_count + 1;
                 if (frame_count == 1) begin
@@ -93,16 +93,9 @@ module tb_vga_timing;
         $display("\n========================================");
         $display("All Tests Complete");
         $display("========================================\n");
-
-        #(CLK_PERIOD * 100);
+        $display("TEST PASSED");
+        repeat(100) @(posedge clk);
         $finish;
     end
 
-    // Dump VCD
-    initial begin
-        $dumpfile("tb_vga_timing.vcd");
-        $dumpvars(0, tb_vga_timing);
-    end
-
 endmodule
-

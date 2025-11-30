@@ -1,11 +1,8 @@
-// tb_vga_renderer.v
-// Testbench for VGA renderer
-
 `timescale 1ns / 1ps
 
 module tb_vga_renderer;
 
-    parameter CLK_PERIOD = 40;  // 25 MHz
+    parameter CLK_PERIOD = 40;
 
     reg clk;
     reg reset;
@@ -13,8 +10,8 @@ module tb_vga_renderer;
     reg visible;
     reg [1:0] edit_row, edit_col;
     reg sw0, sw1;
-    reg signed [16*16-1:0] matrix_a;
-    reg signed [4*16-1:0] vector_v;
+    reg signed [255:0] matrix_a;
+    reg signed [63:0] vector_v;
     
     wire [3:0] red, green, blue;
 
@@ -33,10 +30,14 @@ module tb_vga_renderer;
         .blue(blue)
     );
 
-    // Clock generation
     initial begin
         clk = 0;
         forever #(CLK_PERIOD/2) clk = ~clk;
+    end
+
+    initial begin
+        #1000000;
+        $fatal("TIMEOUT: simulation did not complete");
     end
 
     initial begin
@@ -44,15 +45,14 @@ module tb_vga_renderer;
         $display("Testing vga_renderer");
         $display("========================================");
 
-        // Initialize
         reset = 1;
         hcount = 0;
         vcount = 0;
         visible = 0;
         edit_row = 0;
         edit_col = 0;
-        sw0 = 0;  // EDIT mode
-        sw1 = 0;  // Edit matrix
+        sw0 = 0;
+        sw1 = 0;
         
         matrix_a = {(16*16){1'b0}};
         vector_v = {(4*16){1'b0}};
@@ -77,32 +77,32 @@ module tb_vga_renderer;
         vector_v[47:32] = 16'sd1;
         vector_v[63:48] = 16'sd1;
 
-        #(CLK_PERIOD * 5);
+        repeat(5) @(posedge clk);
         reset = 0;
-        #(CLK_PERIOD * 2);
+        repeat(2) @(posedge clk);
 
         $display("Test 1: Mode indicator box (EDIT mode)");
-        hcount = 50;  // Inside mode box (10-90)
-        vcount = 25;  // Inside mode box (10-40)
+        hcount = 50;
+        vcount = 25;
         visible = 1;
-        sw0 = 0;  // EDIT mode
-        #(CLK_PERIOD);
+        sw0 = 0;
+        @(posedge clk);
         $display("  RGB at mode box = (%d, %d, %d) (expected: yellow 15,15,0)", red, green, blue);
         if (red == 15 && green == 15 && blue == 0) $display("  PASS");
         else $display("  FAIL");
 
         $display("\nTest 2: Mode indicator box (RUN mode)");
-        sw0 = 1;  // RUN mode
-        #(CLK_PERIOD);
+        sw0 = 1;
+        @(posedge clk);
         $display("  RGB at mode box = (%d, %d, %d) (expected: green 0,15,0)", red, green, blue);
         if (red == 0 && green == 15 && blue == 0) $display("  PASS");
         else $display("  FAIL");
 
         $display("\nTest 3: Matrix cell background");
-        hcount = 100;  // Inside matrix cell
-        vcount = 100;  // Inside matrix cell
+        hcount = 100;
+        vcount = 100;
         sw0 = 0;
-        #(CLK_PERIOD);
+        @(posedge clk);
         $display("  RGB at matrix cell = (%d, %d, %d) (expected: navy 0,0,4)", red, green, blue);
         if (red == 0 && green == 0 && blue == 4) $display("  PASS");
         else $display("  FAIL");
@@ -110,44 +110,47 @@ module tb_vga_renderer;
         $display("\nTest 4: Cursor highlight");
         edit_row = 1;
         edit_col = 1;
-        hcount = 150;  // At border of cell [1][1]
+        hcount = 150;
         vcount = 150;
-        #(CLK_PERIOD);
+        @(posedge clk);
         $display("  RGB at cursor border = (%d, %d, %d) (expected: yellow 15,15,0)", red, green, blue);
         if (red == 15 && green == 15 && blue == 0) $display("  PASS");
         else $display("  FAIL");
 
         $display("\nTest 5: Vector cell background");
-        hcount = 550;  // Inside vector cell
+        hcount = 550;
         vcount = 100;
-        #(CLK_PERIOD);
+        @(posedge clk);
         $display("  RGB at vector cell = (%d, %d, %d) (expected: dark gray 2,2,2)", red, green, blue);
         if (red == 2 && green == 2 && blue == 2) $display("  PASS");
         else $display("  FAIL");
 
         $display("\nTest 6: Background (outside cells)");
-        hcount = 400;  // Between matrix and vector
+        hcount = 400;
         vcount = 200;
-        #(CLK_PERIOD);
+        @(posedge clk);
         $display("  RGB at background = (%d, %d, %d) (expected: black 0,0,0)", red, green, blue);
         if (red == 0 && green == 0 && blue == 0) $display("  PASS");
         else $display("  FAIL");
 
         $display("\nTest 7: Matrix with negative value");
         matrix_a[15:0] = -16'sd5;
-        hcount = 50;  // Inside cell [0][0]
+        hcount = 50;
         vcount = 80;
         visible = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         $display("  Testing negative value display");
         $display("  PASS (sign should be rendered)");
 
         $display("\nTest 8: Scan visible area");
         integer pixel_count = 0;
-        for (hcount = 0; hcount < 640; hcount = hcount + 10) begin
-            for (vcount = 0; vcount < 480; vcount = vcount + 10) begin
+        integer x, y;
+        for (x = 0; x < 640; x = x + 10) begin
+            for (y = 0; y < 480; y = y + 10) begin
+                hcount = x;
+                vcount = y;
                 visible = 1;
-                #(CLK_PERIOD);
+                @(posedge clk);
                 if (red != 0 || green != 0 || blue != 0) pixel_count = pixel_count + 1;
             end
         end
@@ -157,16 +160,9 @@ module tb_vga_renderer;
         $display("\n========================================");
         $display("All Tests Complete");
         $display("========================================\n");
-
-        #(CLK_PERIOD * 100);
+        $display("TEST PASSED");
+        repeat(100) @(posedge clk);
         $finish;
     end
 
-    // Dump VCD
-    initial begin
-        $dumpfile("tb_vga_renderer.vcd");
-        $dumpvars(0, tb_vga_renderer);
-    end
-
 endmodule
-

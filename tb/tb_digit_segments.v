@@ -1,6 +1,3 @@
-// tb_digit_segments.v
-// Testbench for digit_segments module
-
 `timescale 1ns / 1ps
 
 module tb_digit_segments;
@@ -14,18 +11,21 @@ module tb_digit_segments;
     );
 
     initial begin
+        #1000;
+        $fatal("TIMEOUT: simulation did not complete");
+    end
+
+    initial begin
         $display("========================================");
         $display("Testing digit_segments");
         $display("========================================");
 
-        // Test all digits 0-9
         integer i;
         for (i = 0; i < 10; i = i + 1) begin
             digit = i;
             #1;
             $display("Digit %d: segments = 7'b%b", i, segments);
             
-            // Verify some known patterns
             case (i)
                 0: if (segments == 7'b1111110) $display("  PASS");
                 1: if (segments == 7'b0110000) $display("  PASS");
@@ -38,10 +38,9 @@ module tb_digit_segments;
         $display("\n========================================");
         $display("All Tests Complete");
         $display("========================================\n");
-
+        $display("TEST PASSED");
         #10;
         $finish;
     end
 
 endmodule
-

@@ -1,6 +1,3 @@
-// tb_dominant_datapath.v
-// Testbench for dominant_datapath module (using existing dominiant_datapath.v)
-
 `timescale 1ns / 1ps
 
 module tb_dominant_datapath;
@@ -23,8 +20,6 @@ module tb_dominant_datapath;
 
     wire signed [15:0] v0, v1, v2, v3;
 
-    // Note: Using the existing dominiant_datapath.v
-    // This testbench tests the existing datapath module
     dominant_datapath uut (
         .clk(clk),
         .reset(reset),
@@ -44,10 +39,14 @@ module tb_dominant_datapath;
         .v3(v3)
     );
 
-    // Clock generation
     initial begin
         clk = 0;
         forever #(CLK_PERIOD/2) clk = ~clk;
+    end
+
+    initial begin
+        #500000;
+        $fatal("TIMEOUT: simulation did not complete");
     end
 
     initial begin
@@ -55,7 +54,6 @@ module tb_dominant_datapath;
         $display("Testing dominant_datapath");
         $display("========================================");
 
-        // Initialize
         reset = 1;
         load_v_old = 0;
         load_y = 0;
@@ -64,107 +62,95 @@ module tb_dominant_datapath;
         start_scale = 0;
         start_diff = 0;
 
-        // Test matrix
         A00 = 4; A01 = 1; A02 = 1; A03 = 1;
         A10 = 1; A11 = 4; A12 = 1; A13 = 1;
         A20 = 1; A21 = 1; A22 = 4; A23 = 1;
         A30 = 1; A31 = 1; A32 = 1; A33 = 4;
 
-        #(CLK_PERIOD * 2);
+        repeat(5) @(posedge clk);
         reset = 0;
-        #(CLK_PERIOD * 2);
+        repeat(2) @(posedge clk);
 
         $display("Test 1: Reset");
         $display("  v = [%d, %d, %d, %d]", v0, v1, v2, v3);
 
-        // Test one iteration
         $display("\nTest 2: One iteration cycle");
 
-        // Step 1: Load initial vector (v_old gets initialized)
         load_v_old = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         load_v_old = 0;
-        #(CLK_PERIOD);
+        @(posedge clk);
 
-        // Step 2: Matrix multiply (takes 4 cycles)
         start_mult = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start_mult = 0;
-        #(CLK_PERIOD * 4);  // Wait for 4 cycles
+        repeat(4) @(posedge clk);
 
         $display("  After matrix multiply (4 cycles)");
 
-        // Step 3: Load y and scale
         load_y = 1;
         start_scale = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         load_y = 0;
         start_scale = 0;
-        #(CLK_PERIOD * 2);  // Wait for scaling
+        repeat(2) @(posedge clk);
 
         $display("  After scaling");
         $display("  v = [%d, %d, %d, %d]", v0, v1, v2, v3);
 
-        // Step 4: Compute difference
         start_diff = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start_diff = 0;
-        #(CLK_PERIOD * 2);  // Wait for diff
+        repeat(2) @(posedge clk);
 
         $display("  After diff");
 
-        // Step 5: Load max_d
         load_max_d = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         load_max_d = 0;
-        #(CLK_PERIOD);
+        @(posedge clk);
 
         $display("\nTest 3: Multiple iterations");
         $display("Iteration 1: v = [%d, %d, %d, %d]", v0, v1, v2, v3);
 
-        // Run a few more iterations
         integer i;
         for (i = 0; i < 5; i = i + 1) begin
-            // Load v_old for next iteration
             load_v_old = 1;
-            #(CLK_PERIOD);
+            @(posedge clk);
             load_v_old = 0;
-            #(CLK_PERIOD);
+            @(posedge clk);
 
-            // Matrix multiply (4 cycles)
             start_mult = 1;
-            #(CLK_PERIOD);
+            @(posedge clk);
             start_mult = 0;
-            #(CLK_PERIOD * 4);
+            repeat(4) @(posedge clk);
 
-            // Scale
             load_y = 1;
             start_scale = 1;
-            #(CLK_PERIOD);
+            @(posedge clk);
             load_y = 0;
             start_scale = 0;
-            #(CLK_PERIOD * 2);
+            repeat(2) @(posedge clk);
 
-            // Diff
             start_diff = 1;
-            #(CLK_PERIOD);
+            @(posedge clk);
             start_diff = 0;
-            #(CLK_PERIOD * 2);
+            repeat(2) @(posedge clk);
 
             load_max_d = 1;
-            #(CLK_PERIOD);
+            @(posedge clk);
             load_max_d = 0;
-            #(CLK_PERIOD);
+            @(posedge clk);
 
             $display("Iteration %0d: v = [%d, %d, %d, %d]", i+2, v0, v1, v2, v3);
         end
 
         $display("========================================\n");
-        #(CLK_PERIOD * 10);
+        $display("TEST PASSED");
+        repeat(10) @(posedge clk);
         $finish;
     end
 
-    // Monitor for X or Z
     always @(posedge clk) begin
         if (^v0 === 1'bx || ^v0 === 1'bz) begin
             $display("ERROR: X or Z in v0 at time %t", $time);
@@ -181,4 +167,3 @@ module tb_dominant_datapath;
     end
 
 endmodule
-

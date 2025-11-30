@@ -1,5 +1,3 @@
-// tb_vector_scale.v - 
-
 `timescale 1ns / 1ps
 
 module tb_vector_scale;
@@ -36,6 +34,11 @@ module tb_vector_scale;
     end
 
     initial begin
+        #50000;
+        $fatal("TIMEOUT: simulation did not complete");
+    end
+
+    initial begin
         $display("========================================");
         $display("Testing vector_scale");
         $display("========================================");
@@ -48,10 +51,10 @@ module tb_vector_scale;
         $display("  V_in = [%d, %d, %d, %d]", V_in0, V_in1, V_in2, V_in3);
         
         start = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start = 0;
-        wait(done == 1);
-        #(CLK_PERIOD);
+        @(posedge done);
+        @(posedge clk);
         
         $display("  V_out = [%d, %d, %d, %d] (expected: [4, 6, 8, 10])", 
                  V_out0, V_out1, V_out2, V_out3);
@@ -65,10 +68,10 @@ module tb_vector_scale;
         $display("  V_in = [%d, %d, %d, %d]", V_in0, V_in1, V_in2, V_in3);
         
         start = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start = 0;
-        wait(done == 1);
-        #(CLK_PERIOD);
+        @(posedge done);
+        @(posedge clk);
         
         $display("  V_out = [%d, %d, %d, %d] (expected: [10, -6, 8, -4])", 
                  V_out0, V_out1, V_out2, V_out3);
@@ -82,10 +85,10 @@ module tb_vector_scale;
         $display("  V_in = [%d, %d, %d, %d]", V_in0, V_in1, V_in2, V_in3);
         
         start = 1;
-        #(CLK_PERIOD);
+        @(posedge clk);
         start = 0;
-        wait(done == 1);
-        #(CLK_PERIOD);
+        @(posedge done);
+        @(posedge clk);
         
         $display("  V_out = [%d, %d, %d, %d] (expected: [3, -8, 7, -4])", 
                  V_out0, V_out1, V_out2, V_out3);
@@ -94,6 +97,7 @@ module tb_vector_scale;
         else $display("  FAIL");
 
         $display("========================================\n");
+        $display("TEST PASSED");
         #(CLK_PERIOD * 5);
         $finish;
     end

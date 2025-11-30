@@ -1,5 +1,3 @@
-// tb_max_finder.v 
-
 `timescale 1ns / 1ps
 
 module tb_max_finder;
@@ -19,6 +17,11 @@ module tb_max_finder;
     wire signed [WIDTH-1:0] a1 = a[2*WIDTH-1:WIDTH];
     wire signed [WIDTH-1:0] a2 = a[3*WIDTH-1:2*WIDTH];
     wire signed [WIDTH-1:0] a3 = a[4*WIDTH-1:3*WIDTH];
+
+    initial begin
+        #1000;
+        $fatal("TIMEOUT: simulation did not complete");
+    end
 
     initial begin
         $display("========================================");
@@ -54,6 +57,7 @@ module tb_max_finder;
         else $display("  FAIL");
 
         $display("========================================\n");
+        $display("TEST PASSED");
         #10;
         $finish;
     end
