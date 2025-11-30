@@ -24,6 +24,9 @@ module tb_dominant;
     
     integer iteration_count;
     reg signed [15:0] prev_v0, prev_v1, prev_v2, prev_v3;
+    integer timeout_cycles;
+    integer cycle_count;
+    reg load_max_d_prev;
     
     dominant_fsm u_fsm (
         .clk(clk),
@@ -110,54 +113,48 @@ module tb_dominant;
         start = 0;
         
         // Wait for convergence (done signal) - use timeout loop like cocotb
-        begin
-            integer timeout_cycles;
-            integer cycle_count;
-            reg load_max_d_prev;
+        timeout_cycles = 1000;  // Reasonable limit
+        cycle_count = 0;
+        load_max_d_prev = 0;
+        
+        // Wait for done signal with timeout, monitoring iterations
+        while (done == 0 && cycle_count < timeout_cycles) begin
+            @(posedge clk);
+            cycle_count = cycle_count + 1;
             
-            timeout_cycles = 1000;  // Reasonable limit
-            cycle_count = 0;
-            load_max_d_prev = 0;
-            
-            // Wait for done signal with timeout, monitoring iterations
-            while (done == 0 && cycle_count < timeout_cycles) begin
-                @(posedge clk);
-                cycle_count = cycle_count + 1;
+            // Monitor iterations by detecting posedge of load_max_d
+            if (load_max_d == 1 && load_max_d_prev == 0) begin
+                // New iteration completed
+                @(posedge clk);  // Wait one cycle for max_d_out register to update
+                iteration_count = iteration_count + 1;
                 
-                // Monitor iterations by detecting posedge of load_max_d
-                if (load_max_d == 1 && load_max_d_prev == 0) begin
-                    // New iteration completed
-                    @(posedge clk);  // Wait one cycle for max_d_out register to update
-                    iteration_count = iteration_count + 1;
-                    
-                    // Print iteration results
-                    // Note: y (intermediate matrix-vector product) is not accessible from testbench
-                    // v_old is the previous iteration's v_new (or initial vector for first iteration)
-                    $display("Iteration %0d:", iteration_count);
-                    if (iteration_count == 1) begin
-                        $display("  v_old: [1, 1, 1, 1] (initial vector)");
-                    end else begin
-                        $display("  v_old: [%d, %d, %d, %d]", prev_v0, prev_v1, prev_v2, prev_v3);
-                    end
-                    $display("  y: [not accessible from testbench]");
-                    $display("  v_new: [%d, %d, %d, %d]", v0, v1, v2, v3);
-                    $display("  max_diff: %d", max_d_out);
-                    $display("");
-                    
-                    // Update previous values for next iteration (store current v_new as v_old)
-                    prev_v0 = v0;
-                    prev_v1 = v1;
-                    prev_v2 = v2;
-                    prev_v3 = v3;
+                // Print iteration results
+                // Note: y (intermediate matrix-vector product) is not accessible from testbench
+                // v_old is the previous iteration's v_new (or initial vector for first iteration)
+                $display("Iteration %0d:", iteration_count);
+                if (iteration_count == 1) begin
+                    $display("  v_old: [1, 1, 1, 1] (initial vector)");
+                end else begin
+                    $display("  v_old: [%d, %d, %d, %d]", prev_v0, prev_v1, prev_v2, prev_v3);
                 end
+                $display("  y: [not accessible from testbench]");
+                $display("  v_new: [%d, %d, %d, %d]", v0, v1, v2, v3);
+                $display("  max_diff: %d", max_d_out);
+                $display("");
                 
-                load_max_d_prev = load_max_d;
+                // Update previous values for next iteration (store current v_new as v_old)
+                prev_v0 = v0;
+                prev_v1 = v1;
+                prev_v2 = v2;
+                prev_v3 = v3;
             end
             
-            if (done == 0) begin
-                $display("ERROR: Computation did not converge after %d cycles", cycle_count);
-                $fatal("TIMEOUT: simulation did not complete");
-            end
+            load_max_d_prev = load_max_d;
+        end
+        
+        if (done == 0) begin
+            $display("ERROR: Computation did not converge after %d cycles", cycle_count);
+            $fatal("TIMEOUT: simulation did not complete");
         end
         
         // Only read vectors AFTER done is high
