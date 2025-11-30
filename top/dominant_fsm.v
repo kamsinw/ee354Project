@@ -28,6 +28,8 @@ module dominant_fsm (
 
     reg [2:0] state;
     reg start_mult_reg, start_scale_reg, start_diff_reg;
+    
+    wire [15:0] eps16 = {13'b0, epsilon};
 
     always @(posedge clk) begin
         if (reset) begin
@@ -128,7 +130,7 @@ module dominant_fsm (
                     start_scale <= 1'b0;
                     start_diff <= 1'b0;
                     done <= 1'b0;
-                    if (max_d_in < epsilon) begin
+                    if (max_d_in <= eps16) begin
                         state <= DONE_ST;
                     end else begin
                         load_v_old <= 1'b1;
@@ -144,9 +146,6 @@ module dominant_fsm (
                     start_scale <= 1'b0;
                     start_diff <= 1'b0;
                     done <= 1'b1;
-                    if (~start) begin
-                        state <= IDLE;
-                    end
                 end
 
                 default: begin
