@@ -117,81 +117,34 @@ module tb_dominant;
         @(posedge clk);
         start = 0;
         
-        prev_ratio = 0.0;
         iteration_count = 0;
+        timeout_counter = 0;
         
-        fork
-            begin
-                #(CLK_PERIOD * 900000);
-                $display("\n*** FORK TIMEOUT: Test took too long ***");
-                $display("Time: %t", $time);
-                $display("Current state signals: mul_done=%b, scale_done=%b, diff_done=%b, done=%b", 
-                         mul_done, scale_done, diff_done, done);
-                $display("Iteration count: %d", iteration_count);
-                $display("FSM signals: load_v_old=%b, start_mult=%b, start_scale=%b, start_diff=%b",
-                         load_v_old, start_mult, start_scale, start_diff);
-                $fatal("FORK TIMEOUT");
-            end
+        // Wait for FSM done signal (like cocotb testbench)
+        while (!done && timeout_counter < 10000) begin
+            @(posedge clk);
+            timeout_counter = timeout_counter + 1;
             
-            begin
-                timeout_counter = 0;
-                
-                while (iteration_count < 50 && timeout_counter < 1000000) begin
-                    @(posedge clk);
-                    timeout_counter = timeout_counter + 1;
-                    
-                    if (diff_done) begin
-                        repeat(2) @(posedge clk);
-                        
-                        iteration_count = iteration_count + 1;
-                        timeout_counter = 0;
-                        
-                        if (v0 != 0) begin
-                            curr_ratio = (v1 * 1.0) / (v0 * 1.0);
-                        end else begin
-                            curr_ratio = 0;
-                        end
-                        
-                        $display("Iteration %2d: v = [%6d, %6d, %6d, %6d] | max_diff = %6d | ratio = %.6f",
-                                 iteration_count, v0, v1, v2, v3, max_d_out, curr_ratio);
-                        
-                        if (max_d_out < epsilon) begin
-                            $display("\n*** CONVERGED after %d iterations ***", iteration_count);
-                            $display("Final eigenvector: [%d, %d, %d, %d]", v0, v1, v2, v3);
-                            disable fork;
-                        end
-                        
-                        if (iteration_count > 5) begin
-                            diff_ratio = curr_ratio - prev_ratio;
-                            if (diff_ratio < 0) diff_ratio = -diff_ratio;
-                            if (diff_ratio < 0.0001) begin
-                                $display("*** Vector direction stabilized ***");
-                            end
-                        end
-                        
-                        prev_ratio = curr_ratio;
-                        repeat(5) @(posedge clk);
-                    end
-                    
-                    if (done) begin
-                        $display("\n*** FSM DONE signal asserted after %d iterations ***", iteration_count);
-                        $display("Final eigenvector: [%d, %d, %d, %d]", v0, v1, v2, v3);
-                        disable fork;
-                    end
-                end
-                
-                if (timeout_counter >= 1000000) begin
-                    $display("\n*** WHILE LOOP TIMEOUT: No diff_done for too long ***");
-                    $display("Iteration count: %d", iteration_count);
-                    $display("Current signals: mul_done=%b, scale_done=%b, diff_done=%b, done=%b",
-                             mul_done, scale_done, diff_done, done);
-                end
-                
-                if (iteration_count >= 50) begin
-                    $display("\n*** Test completed %d iterations without convergence ***", iteration_count);
-                end
+            // Monitor progress every few cycles
+            if (timeout_counter % 10 == 0) begin
+                $display("Cycle %6d: v = [%6d, %6d, %6d, %6d] | max_diff = %6d | done = %b",
+                         timeout_counter, v0, v1, v2, v3, max_d_out, done);
             end
-        join
+        end
+        
+        if (done) begin
+            $display("\n*** CONVERGED: FSM done signal asserted ***");
+            $display("Total cycles: %d", timeout_counter);
+            $display("Final eigenvector: [%d, %d, %d, %d]", v0, v1, v2, v3);
+            $display("Final max_diff: %d (epsilon = %d)", max_d_out, epsilon);
+        end else begin
+            $display("\n*** TIMEOUT: FSM done signal not asserted after %d cycles ***", timeout_counter);
+            $display("Current signals: mul_done=%b, scale_done=%b, diff_done=%b, done=%b",
+                     mul_done, scale_done, diff_done, done);
+            $display("Current vector: [%d, %d, %d, %d]", v0, v1, v2, v3);
+            $display("Current max_diff: %d", max_d_out);
+            $fatal("Test failed: timeout waiting for done signal");
+        end
         
         $display("\n========================================");
         $display("Test Complete");
