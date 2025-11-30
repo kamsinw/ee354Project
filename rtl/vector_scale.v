@@ -40,19 +40,19 @@ module vector_scale #(parameter WIDTH = 16) (
     wire signed [31:0] V_out2_div = (scale > 0) ? (V_in2_shifted / scale_ext) : V_in2_ext;
     wire signed [31:0] V_out3_div = (scale > 0) ? (V_in3_shifted / scale_ext) : V_in3_ext;
     
-    wire signed [15:0] V_out0_clamped;
-    wire signed [15:0] V_out1_clamped;
-    wire signed [15:0] V_out2_clamped;
-    wire signed [15:0] V_out3_clamped;
+    wire signed [15:0] V_out0_final;
+    wire signed [15:0] V_out1_final;
+    wire signed [15:0] V_out2_final;
+    wire signed [15:0] V_out3_final;
     
-    assign V_out0_clamped = (V_out0_div > 32767) ? 16'sd32767 : 
-                             ((V_out0_div < -32768) ? -16'sd32768 : V_out0_div[15:0]);
-    assign V_out1_clamped = (V_out1_div > 32767) ? 16'sd32767 : 
-                             ((V_out1_div < -32768) ? -16'sd32768 : V_out1_div[15:0]);
-    assign V_out2_clamped = (V_out2_div > 32767) ? 16'sd32767 : 
-                             ((V_out2_div < -32768) ? -16'sd32768 : V_out2_div[15:0]);
-    assign V_out3_clamped = (V_out3_div > 32767) ? 16'sd32767 : 
-                             ((V_out3_div < -32768) ? -16'sd32768 : V_out3_div[15:0]);
+    assign V_out0_final = (V_out0_div >= 32768) ? 16'sd32767 : 
+                          ((V_out0_div <= -32769) ? -16'sd32768 : V_out0_div[15:0]);
+    assign V_out1_final = (V_out1_div >= 32768) ? 16'sd32767 : 
+                          ((V_out1_div <= -32769) ? -16'sd32768 : V_out1_div[15:0]);
+    assign V_out2_final = (V_out2_div >= 32768) ? 16'sd32767 : 
+                          ((V_out2_div <= -32769) ? -16'sd32768 : V_out2_div[15:0]);
+    assign V_out3_final = (V_out3_div >= 32768) ? 16'sd32767 : 
+                          ((V_out3_div <= -32769) ? -16'sd32768 : V_out3_div[15:0]);
 
     reg done_reg;
     
@@ -62,7 +62,7 @@ module vector_scale #(parameter WIDTH = 16) (
             done <= 1'b0;
             done_reg <= 1'b0;
         end else if (start) begin
-            V_out <= {V_out3_clamped, V_out2_clamped, V_out1_clamped, V_out0_clamped};
+            V_out <= {V_out3_final, V_out2_final, V_out1_final, V_out0_final};
             done_reg <= 1'b1;
             done <= 1'b1;
         end else begin
