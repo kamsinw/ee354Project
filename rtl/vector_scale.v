@@ -62,6 +62,9 @@ module vector_scale #(parameter WIDTH = 16) (
             done <= 1'b1;
         end else begin
             done <= done_reg;
+            if (!start && done_reg) begin
+                done_reg <= 1'b0;
+            end
         end
     end
 
