@@ -34,6 +34,8 @@ module vga_top (
         .visible(visible)
     );
 
+    wire [3:0] red_comb, green_comb, blue_comb;
+    
     display_controller renderer (
         .hcount(hcount),
         .vcount(vcount),
@@ -44,9 +46,28 @@ module vga_top (
         .sw1(sw1),
         .matrix_a(matrix_a),
         .vector_v(vector_v),
-        .red(vga_red),
-        .green(vga_green),
-        .blue(vga_blue)
+        .red(red_comb),
+        .green(green_comb),
+        .blue(blue_comb)
     );
+    
+    // Register VGA outputs to prevent glitches (single output register allowed per spec)
+    reg [3:0] vga_red_reg, vga_green_reg, vga_blue_reg;
+    
+    always @(posedge clk_25mhz) begin
+        if (reset) begin
+            vga_red_reg <= 4'b0000;
+            vga_green_reg <= 4'b0000;
+            vga_blue_reg <= 4'b0000;
+        end else begin
+            vga_red_reg <= red_comb;
+            vga_green_reg <= green_comb;
+            vga_blue_reg <= blue_comb;
+        end
+    end
+    
+    assign vga_red = vga_red_reg;
+    assign vga_green = vga_green_reg;
+    assign vga_blue = vga_blue_reg;
 
 endmodule

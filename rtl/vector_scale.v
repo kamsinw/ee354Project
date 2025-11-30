@@ -23,27 +23,36 @@ module vector_scale #(parameter WIDTH = 16) (
 
     wire signed [WIDTH-1:0] scale = max_val;
     
-    // TIMING OPTIMIZATION: Further reduce to 20-bit operations (from 24-bit)
-    // 16-bit input << 14 = 30 bits max, but in practice Q2.14 values are bounded
-    // 20 bits provides sufficient headroom: max shifted value ~536M, but realistic max is much less
-    wire signed [19:0] V_in0_ext = {{4{V_in0[15]}}, V_in0};
-    wire signed [19:0] V_in1_ext = {{4{V_in1[15]}}, V_in1};
-    wire signed [19:0] V_in2_ext = {{4{V_in2[15]}}, V_in2};
-    wire signed [19:0] V_in3_ext = {{4{V_in3[15]}}, V_in3};
+    // TIMING OPTIMIZATION: Use 24-bit for shift (needed for << 14), then truncate to 20-bit for division
+    // 16-bit input << 14 needs at least 30 bits, but we use 24-bit and truncate (safe for Q2.14)
+    wire signed [23:0] V_in0_ext = {{8{V_in0[15]}}, V_in0};
+    wire signed [23:0] V_in1_ext = {{8{V_in1[15]}}, V_in1};
+    wire signed [23:0] V_in2_ext = {{8{V_in2[15]}}, V_in2};
+    wire signed [23:0] V_in3_ext = {{8{V_in3[15]}}, V_in3};
     
-    wire signed [19:0] V_in0_shifted = V_in0_ext << 14;
-    wire signed [19:0] V_in1_shifted = V_in1_ext << 14;
-    wire signed [19:0] V_in2_shifted = V_in2_ext << 14;
-    wire signed [19:0] V_in3_shifted = V_in3_ext << 14;
+    // Shift: 24-bit << 14 = 38-bit result, truncate to 24-bit then to 20-bit
+    wire signed [23:0] V_in0_shifted_24 = V_in0_ext << 14;
+    wire signed [23:0] V_in1_shifted_24 = V_in1_ext << 14;
+    wire signed [23:0] V_in2_shifted_24 = V_in2_ext << 14;
+    wire signed [23:0] V_in3_shifted_24 = V_in3_ext << 14;
+    wire signed [19:0] V_in0_shifted = V_in0_shifted_24[19:0];
+    wire signed [19:0] V_in1_shifted = V_in1_shifted_24[19:0];
+    wire signed [19:0] V_in2_shifted = V_in2_shifted_24[19:0];
+    wire signed [19:0] V_in3_shifted = V_in3_shifted_24[19:0];
     
     wire signed [19:0] scale_ext = {4'b0, scale};
     
     // TIMING OPTIMIZATION: Use 20-bit division (vs 24-bit) - significant timing improvement
     // 20-bit / 20-bit = 20-bit result, then clamp to 16-bit output
-    wire signed [19:0] V_out0_div = (scale > 0) ? (V_in0_shifted / scale_ext) : V_in0_ext;
-    wire signed [19:0] V_out1_div = (scale > 0) ? (V_in1_shifted / scale_ext) : V_in1_ext;
-    wire signed [19:0] V_out2_div = (scale > 0) ? (V_in2_shifted / scale_ext) : V_in2_ext;
-    wire signed [19:0] V_out3_div = (scale > 0) ? (V_in3_shifted / scale_ext) : V_in3_ext;
+    // Handle division by zero: if scale == 0, return zero vector (all inputs are zero)
+    wire signed [19:0] V_in0_ext_20 = V_in0_ext[19:0];
+    wire signed [19:0] V_in1_ext_20 = V_in1_ext[19:0];
+    wire signed [19:0] V_in2_ext_20 = V_in2_ext[19:0];
+    wire signed [19:0] V_in3_ext_20 = V_in3_ext[19:0];
+    wire signed [19:0] V_out0_div = (scale > 0) ? (V_in0_shifted / scale_ext) : 20'sd0;
+    wire signed [19:0] V_out1_div = (scale > 0) ? (V_in1_shifted / scale_ext) : 20'sd0;
+    wire signed [19:0] V_out2_div = (scale > 0) ? (V_in2_shifted / scale_ext) : 20'sd0;
+    wire signed [19:0] V_out3_div = (scale > 0) ? (V_in3_shifted / scale_ext) : 20'sd0;
     
     wire signed [15:0] V_out0_final;
     wire signed [15:0] V_out1_final;
