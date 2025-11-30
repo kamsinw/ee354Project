@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 // top_eigenvector.v - Top-level module for Nexys A7
 
 module top_eigenvector (

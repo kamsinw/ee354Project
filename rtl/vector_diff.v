@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 // vector_diff.v - 
 module vector_diff #(parameter WIDTH = 16) (
     input  wire                      clk,

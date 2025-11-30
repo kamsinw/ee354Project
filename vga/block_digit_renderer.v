@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 // block_digit_renderer.v - 7-segment block digit using rectangles only
 
 module block_digit_renderer (

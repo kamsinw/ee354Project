@@ -170,7 +170,7 @@ module tb_dominant;
                     end
                     
                     // Check if ratio is stabilizing (convergence indicator)
-                    if (iteration_count > 5 && $abs(curr_ratio - prev_ratio) < 0.0001) begin
+                    if (iteration_count > 5 && ((curr_ratio - prev_ratio) < 0 ? -(curr_ratio - prev_ratio) : (curr_ratio - prev_ratio)) < 0.0001) begin
                         $display("*** Vector direction stabilized ***");
                     end
                     

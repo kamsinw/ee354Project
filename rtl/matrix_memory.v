@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 // matrix_memory.v
 // 4x4 matrix storage with per-cell write
 

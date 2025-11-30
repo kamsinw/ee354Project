@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 // vector_register.v - 
 
 module vector_register #(parameter WIDTH = 16) (

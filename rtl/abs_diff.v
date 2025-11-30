@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 // abs_diff.v -
 
 module abs_diff #(parameter WIDTH = 16) (

@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 // vector_scale.v - 
 module vector_scale #(parameter WIDTH = 64) (
     input  wire                      clk,

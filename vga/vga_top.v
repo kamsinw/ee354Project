@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 // vga_top.v - 
 
 module vga_top (

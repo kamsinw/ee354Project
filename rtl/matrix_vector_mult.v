@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 // matrix_vector_mult.v - 
 
 module matrix_vector_mult (

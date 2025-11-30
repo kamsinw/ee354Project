@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 // dominant_datapath.v - Power iteration datapath 
 
 module dominant_datapath (

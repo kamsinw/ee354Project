@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 // dominant_fsm.v - Power iteration FSM controller
 
 module dominant_fsm (

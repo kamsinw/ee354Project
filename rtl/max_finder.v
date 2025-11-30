@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 // max_finder.v - Converted array ports to packed buses
 
 module max_finder #(parameter WIDTH = 16) (

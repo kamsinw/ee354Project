@@ -1,4 +1,6 @@
-// counter.v - VGA timing counter with exact specs
+`timescale 1ns / 1ps
+
+// counter.v - VGA timing counter 
 
 module counter (
     input  wire clk,
