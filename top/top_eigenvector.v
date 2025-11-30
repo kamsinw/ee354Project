@@ -166,7 +166,7 @@ module top_eigenvector (
     wire load_v_old, load_y, load_max_d;
     wire start_mult, start_scale, start_diff;
     wire mul_done, scale_done, diff_done;
-    wire signed [15:0] max_d_out;
+    wire [15:0] max_d_out;
     wire signed [63:0] v_out;
     
     reg sw0_r;

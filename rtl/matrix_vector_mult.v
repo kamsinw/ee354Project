@@ -71,7 +71,8 @@ module matrix_vector_mult (
                         done_reg <= 1'b1;
                         done <= 1'b1;
                     end else begin
-                        done <= 1'b1;
+                        done <= 1'b0;
+                        done_reg <= 1'b0;
                     end
                 end
             endcase

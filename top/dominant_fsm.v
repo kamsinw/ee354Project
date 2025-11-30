@@ -8,7 +8,7 @@ module dominant_fsm (
     input  wire        mul_done,
     input  wire        scale_done,
     input  wire        diff_done,
-    input  wire signed [15:0] max_d_in,
+    input  wire [15:0] max_d_in,
     input  wire [2:0] epsilon,
     output reg         load_v_old,
     output reg         load_y,

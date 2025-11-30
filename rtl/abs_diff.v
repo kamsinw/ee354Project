@@ -1,11 +1,9 @@
 `timescale 1ns / 1ps
 
-// abs_diff.v -
-
 module abs_diff #(parameter WIDTH = 16) (
     input  wire signed [4*WIDTH-1:0] a,
     input  wire signed [4*WIDTH-1:0] b,
-    output wire signed [4*WIDTH-1:0] diff
+    output wire [4*WIDTH-1:0] diff
 );
 
     wire signed [WIDTH-1:0] a0 = a[WIDTH-1:0];
@@ -23,10 +21,10 @@ module abs_diff #(parameter WIDTH = 16) (
     wire signed [WIDTH-1:0] d2 = a2 - b2;
     wire signed [WIDTH-1:0] d3 = a3 - b3;
 
-    wire signed [WIDTH-1:0] diff0 = (d0 < 0) ? -d0 : d0;
-    wire signed [WIDTH-1:0] diff1 = (d1 < 0) ? -d1 : d1;
-    wire signed [WIDTH-1:0] diff2 = (d2 < 0) ? -d2 : d2;
-    wire signed [WIDTH-1:0] diff3 = (d3 < 0) ? -d3 : d3;
+    wire [WIDTH-1:0] diff0 = (d0 < 0) ? (-d0) : d0;
+    wire [WIDTH-1:0] diff1 = (d1 < 0) ? (-d1) : d1;
+    wire [WIDTH-1:0] diff2 = (d2 < 0) ? (-d2) : d2;
+    wire [WIDTH-1:0] diff3 = (d3 < 0) ? (-d3) : d3;
 
     assign diff = {diff3, diff2, diff1, diff0};
 

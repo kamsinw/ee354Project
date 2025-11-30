@@ -28,26 +28,26 @@ module vector_scale #(parameter WIDTH = 16) (
     wire signed [31:0] V_in2_shifted = V_in2 << 15;
     wire signed [31:0] V_in3_shifted = V_in3 << 15;
     
-    wire signed [31:0] scale_ext = {16'b0, scale};
+    wire signed [31:0] scale_ext = {{16{scale[15]}}, scale};
     
-    wire signed [31:0] V_out0_div = (scale > 0) ? (V_in0_shifted / scale_ext) : V_in0;
-    wire signed [31:0] V_out1_div = (scale > 0) ? (V_in1_shifted / scale_ext) : V_in1;
-    wire signed [31:0] V_out2_div = (scale > 0) ? (V_in2_shifted / scale_ext) : V_in2;
-    wire signed [31:0] V_out3_div = (scale > 0) ? (V_in3_shifted / scale_ext) : V_in3;
+    wire signed [31:0] V_out0_div_raw = (scale != 0) ? (V_in0_shifted / scale_ext) : V_in0;
+    wire signed [31:0] V_out1_div_raw = (scale != 0) ? (V_in1_shifted / scale_ext) : V_in1;
+    wire signed [31:0] V_out2_div_raw = (scale != 0) ? (V_in2_shifted / scale_ext) : V_in2;
+    wire signed [31:0] V_out3_div_raw = (scale != 0) ? (V_in3_shifted / scale_ext) : V_in3;
     
-    wire signed [15:0] V_out0_clamped;
-    wire signed [15:0] V_out1_clamped;
-    wire signed [15:0] V_out2_clamped;
-    wire signed [15:0] V_out3_clamped;
+    wire signed [15:0] V_out0;
+    wire signed [15:0] V_out1;
+    wire signed [15:0] V_out2;
+    wire signed [15:0] V_out3;
     
-    assign V_out0_clamped = (V_out0_div > 32767) ? 16'sd32767 : 
-                             ((V_out0_div < -32768) ? -16'sd32768 : V_out0_div[15:0]);
-    assign V_out1_clamped = (V_out1_div > 32767) ? 16'sd32767 : 
-                             ((V_out1_div < -32768) ? -16'sd32768 : V_out1_div[15:0]);
-    assign V_out2_clamped = (V_out2_div > 32767) ? 16'sd32767 : 
-                             ((V_out2_div < -32768) ? -16'sd32768 : V_out2_div[15:0]);
-    assign V_out3_clamped = (V_out3_div > 32767) ? 16'sd32767 : 
-                             ((V_out3_div < -32768) ? -16'sd32768 : V_out3_div[15:0]);
+    assign V_out0 = (V_out0_div_raw > 32767) ? 16'sd32767 : 
+                    ((V_out0_div_raw < -32768) ? -16'sd32768 : V_out0_div_raw[15:0]);
+    assign V_out1 = (V_out1_div_raw > 32767) ? 16'sd32767 : 
+                    ((V_out1_div_raw < -32768) ? -16'sd32768 : V_out1_div_raw[15:0]);
+    assign V_out2 = (V_out2_div_raw > 32767) ? 16'sd32767 : 
+                    ((V_out2_div_raw < -32768) ? -16'sd32768 : V_out2_div_raw[15:0]);
+    assign V_out3 = (V_out3_div_raw > 32767) ? 16'sd32767 : 
+                    ((V_out3_div_raw < -32768) ? -16'sd32768 : V_out3_div_raw[15:0]);
 
     reg done_reg;
     
@@ -57,7 +57,7 @@ module vector_scale #(parameter WIDTH = 16) (
             done <= 1'b0;
             done_reg <= 1'b0;
         end else if (start) begin
-            V_out <= {V_out3_clamped, V_out2_clamped, V_out1_clamped, V_out0_clamped};
+            V_out <= {V_out3, V_out2, V_out1, V_out0};
             done_reg <= 1'b1;
             done <= 1'b1;
         end else begin

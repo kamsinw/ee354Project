@@ -6,18 +6,18 @@ module vector_diff #(parameter WIDTH = 16) (
     input  wire                      start,
     input  wire signed [4*WIDTH-1:0] V_new,
     input  wire signed [4*WIDTH-1:0] V_old,
-    output reg  signed [WIDTH-1:0]   max_diff,
+    output reg  [WIDTH-1:0]          max_diff,
     output reg                       done
 );
 
-    wire signed [4*WIDTH-1:0] d_in;
+    wire [4*WIDTH-1:0] d_in;
     abs_diff #(WIDTH) AD (
         .a(V_new),
         .b(V_old),
         .diff(d_in)
     );
 
-    wire signed [WIDTH-1:0] maxv;
+    wire [WIDTH-1:0] maxv;
     max_finder #(WIDTH) MF (
         .a(d_in),
         .max_val(maxv)
