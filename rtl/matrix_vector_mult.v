@@ -32,6 +32,32 @@ module matrix_vector_mult (
     wire signed [15:0] V2 = V[47:32];
     wire signed [15:0] V3 = V[63:48];
 
+    // TIMING OPTIMIZATION: Declare products and sums outside always block
+    // Break 4-way adder trees into explicit products, use 24-bit intermediate sums
+    wire signed [31:0] prod0_0 = A00 * V0;
+    wire signed [31:0] prod0_1 = A01 * V1;
+    wire signed [31:0] prod0_2 = A02 * V2;
+    wire signed [31:0] prod0_3 = A03 * V3;
+    wire signed [23:0] sum0 = prod0_0[23:0] + prod0_1[23:0] + prod0_2[23:0] + prod0_3[23:0];
+    
+    wire signed [31:0] prod1_0 = A10 * V0;
+    wire signed [31:0] prod1_1 = A11 * V1;
+    wire signed [31:0] prod1_2 = A12 * V2;
+    wire signed [31:0] prod1_3 = A13 * V3;
+    wire signed [23:0] sum1 = prod1_0[23:0] + prod1_1[23:0] + prod1_2[23:0] + prod1_3[23:0];
+    
+    wire signed [31:0] prod2_0 = A20 * V0;
+    wire signed [31:0] prod2_1 = A21 * V1;
+    wire signed [31:0] prod2_2 = A22 * V2;
+    wire signed [31:0] prod2_3 = A23 * V3;
+    wire signed [23:0] sum2 = prod2_0[23:0] + prod2_1[23:0] + prod2_2[23:0] + prod2_3[23:0];
+    
+    wire signed [31:0] prod3_0 = A30 * V0;
+    wire signed [31:0] prod3_1 = A31 * V1;
+    wire signed [31:0] prod3_2 = A32 * V2;
+    wire signed [31:0] prod3_3 = A33 * V3;
+    wire signed [23:0] sum3 = prod3_0[23:0] + prod3_1[23:0] + prod3_2[23:0] + prod3_3[23:0];
+
     reg [1:0] row;
     reg done_reg;
 
@@ -48,26 +74,27 @@ module matrix_vector_mult (
         end else begin
             case (row)
                 2'b00: begin
-                    Y <= {Y[63:16], A00*V0 + A01*V1 + A02*V2 + A03*V3};
+                    // TIMING OPTIMIZATION: Use pre-computed 24-bit sum (reduces carry chain depth)
+                    Y <= {Y[63:16], sum0[15:0]};
                     row <= 2'b01;
                     done <= 1'b0;
                     done_reg <= 1'b0;
                 end
                 2'b01: begin
-                    Y <= {Y[63:32], A10*V0 + A11*V1 + A12*V2 + A13*V3, Y[15:0]};
+                    Y <= {Y[63:32], sum1[15:0], Y[15:0]};
                     row <= 2'b10;
                     done <= 1'b0;
                     done_reg <= 1'b0;
                 end
                 2'b10: begin
-                    Y <= {Y[63:48], A20*V0 + A21*V1 + A22*V2 + A23*V3, Y[31:0]};
+                    Y <= {Y[63:48], sum2[15:0], Y[31:0]};
                     row <= 2'b11;
                     done <= 1'b0;
                     done_reg <= 1'b0;
                 end
                 2'b11: begin
                     if (!done_reg) begin
-                        Y <= {A30*V0 + A31*V1 + A32*V2 + A33*V3, Y[47:0]};
+                        Y <= {sum3[15:0], Y[47:0]};
                         done_reg <= 1'b1;
                         done <= 1'b1;
                     end else begin
