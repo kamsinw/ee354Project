@@ -25,6 +25,8 @@ module tb_dominant;
 	integer start_clock_cnt;
 	integer iteration_clock_cnt;
 	reg Load_max_d_prev;
+	integer timeout_cycles;
+	integer cycle_count;
 	
 	dominant_fsm u_fsm (
 		.clk(Clk),
@@ -136,9 +138,12 @@ module tb_dominant;
 			Start = 0;
 			
 			start_clock_cnt = clk_cnt;
+			timeout_cycles = 1000;
+			cycle_count = 0;
 			
-			while (Done == 0) begin
+			while (Done == 0 && cycle_count < timeout_cycles) begin
 				@(posedge Clk);
+				cycle_count = cycle_count + 1;
 				
 				if (Load_max_d == 1 && Load_max_d_prev == 0) begin
 					@(posedge Clk);
@@ -167,7 +172,11 @@ module tb_dominant;
 				Load_max_d_prev = Load_max_d;
 			end
 			
-			wait(Done);
+			if (Done == 0) begin
+				$display("ERROR: Computation did not converge after %d cycles", cycle_count);
+				$fatal("TIMEOUT: simulation did not complete");
+			end
+			
 			@(posedge Clk);
 			@(posedge Clk);
 			#1;
