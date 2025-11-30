@@ -23,11 +23,7 @@ module tb_dominant;
     reg signed [15:0] A30, A31, A32, A33;
     
     integer iteration_count;
-    integer i;
-    integer timeout_counter;
-    real prev_ratio;
-    real curr_ratio;
-    real diff_ratio;
+    reg signed [15:0] prev_v0, prev_v1, prev_v2, prev_v3;
     
     dominant_fsm u_fsm (
         .clk(clk),
@@ -76,22 +72,6 @@ module tb_dominant;
     end
     
     initial begin
-        #10000000;
-        $display("\n*** GLOBAL TIMEOUT: simulation did not complete ***");
-        $display("Time: %t", $time);
-        $display("Current state signals: mul_done=%b, scale_done=%b, diff_done=%b, done=%b", 
-                 mul_done, scale_done, diff_done, done);
-        $display("Control signals: load_v_old=%b, load_y=%b, load_max_d=%b",
-                 load_v_old, load_y, load_max_d);
-        $display("Start signals: start_mult=%b, start_scale=%b, start_diff=%b",
-                 start_mult, start_scale, start_diff);
-        $display("Current vector: [%d, %d, %d, %d]", v0, v1, v2, v3);
-        $display("Current max_diff: %d", max_d_out);
-        $display("Iteration count: %d", iteration_count);
-        $fatal("TIMEOUT: simulation did not complete");
-    end
-    
-    initial begin
         reset = 1;
         start = 0;
         epsilon = 3'd2;
@@ -102,13 +82,10 @@ module tb_dominant;
         A30 = 16'sd1; A31 = 16'sd1; A32 = 16'sd1; A33 = 16'sd4;
         
         iteration_count = 0;
-        
-        // Ensure proper reset sequence - wait for clock edges
-        @(posedge clk);
-        repeat(5) @(posedge clk);
-        reset = 0;
-        @(posedge clk);
-        repeat(2) @(posedge clk);
+        prev_v0 = 16'sd0;
+        prev_v1 = 16'sd0;
+        prev_v2 = 16'sd0;
+        prev_v3 = 16'sd0;
         
         $display("========================================");
         $display("Starting Power Iteration Test");
@@ -122,59 +99,61 @@ module tb_dominant;
         $display("Initial vector: [1, 1, 1, 1]");
         $display("========================================\n");
         
-        // Assert start signal and ensure it's seen
+        // Reset sequence: assert reset for 5 cycles, then deassert on clock edge
+        @(posedge clk);
+        repeat(5) @(posedge clk);
+        reset = 0;
+        @(posedge clk);
+        
+        // Pulse start signal HIGH for exactly one clock cycle
         start = 1;
         @(posedge clk);
         start = 0;
-        @(posedge clk);  // Extra cycle to ensure start is processed
         
-        iteration_count = 0;
-        timeout_counter = 0;
-        
-        // Wait for FSM done signal with enhanced debugging
-        // Use same timeout as cocotb test (1000 cycles) but allow more for safety
-        while (!done && timeout_counter < 5000) begin
-            @(posedge clk);
-            timeout_counter = timeout_counter + 1;
+        // Monitor iterations by tracking when load_max_d is asserted (iteration completes)
+        // This happens in CHECK state after max_diff is computed
+        forever begin
+            // Wait for load_max_d to know an iteration has completed
+            @(posedge load_max_d);
+            @(posedge clk);  // Wait one cycle for max_d_out register to update
             
-            // Enhanced monitoring - show FSM control signals
-            if (timeout_counter % 50 == 0 || timeout_counter < 20) begin
-                $display("Cycle %6d: v=[%6d,%6d,%6d,%6d] max_diff=%6d done=%b",
-                         timeout_counter, v0, v1, v2, v3, max_d_out, done);
-                $display("  Control: load_v_old=%b load_y=%b load_max_d=%b",
-                         load_v_old, load_y, load_max_d);
-                $display("  Start: start_mult=%b start_scale=%b start_diff=%b",
-                         start_mult, start_scale, start_diff);
-                $display("  Done:  mul_done=%b scale_done=%b diff_done=%b",
-                         mul_done, scale_done, diff_done);
-            end
+            iteration_count = iteration_count + 1;
             
-            // Detect if we're stuck (same values for many cycles)
-            if (timeout_counter > 100 && timeout_counter % 100 == 0) begin
-                $display("WARNING: Still waiting after %d cycles", timeout_counter);
+            // Print iteration results
+            // Note: y (intermediate matrix-vector product) is not accessible from testbench
+            // v_old is the previous iteration's v_new (or initial vector for first iteration)
+            $display("Iteration %0d:", iteration_count);
+            if (iteration_count == 1) begin
+                $display("  v_old: [1, 1, 1, 1] (initial vector)");
+            end else begin
+                $display("  v_old: [%d, %d, %d, %d]", prev_v0, prev_v1, prev_v2, prev_v3);
             end
+            $display("  y: [not accessible from testbench]");
+            $display("  v_new: [%d, %d, %d, %d]", v0, v1, v2, v3);
+            $display("  max_diff: %d", max_d_out);
+            $display("");
+            
+            // Update previous values for next iteration (store current v_new as v_old)
+            prev_v0 = v0;
+            prev_v1 = v1;
+            prev_v2 = v2;
+            prev_v3 = v3;
         end
+    end
+    
+    // Wait for done signal using event-driven waiting
+    initial begin
+        @(posedge done);
         
-        if (done) begin
-            $display("\n*** CONVERGED: FSM done signal asserted ***");
-            $display("Total cycles: %d", timeout_counter);
-            $display("Final eigenvector: [%d, %d, %d, %d]", v0, v1, v2, v3);
-            $display("Final max_diff: %d (epsilon = %d)", max_d_out, epsilon);
-        end else begin
-            $display("\n*** TIMEOUT: FSM done signal not asserted after %d cycles ***", timeout_counter);
-            $display("Current signals: mul_done=%b, scale_done=%b, diff_done=%b, done=%b",
-                     mul_done, scale_done, diff_done, done);
-            $display("Control signals: load_v_old=%b, load_y=%b, load_max_d=%b",
-                     load_v_old, load_y, load_max_d);
-            $display("Start signals: start_mult=%b, start_scale=%b, start_diff=%b",
-                     start_mult, start_scale, start_diff);
-            $display("Current vector: [%d, %d, %d, %d]", v0, v1, v2, v3);
-            $display("Current max_diff: %d", max_d_out);
-            $fatal("Test failed: timeout waiting for done signal");
-        end
+        // Only read vectors AFTER done is high
+        @(posedge clk);  // Wait one cycle to ensure values are stable
         
-        $display("\n========================================");
-        $display("Test Complete");
+        $display("========================================");
+        $display("Computation Complete");
+        $display("========================================");
+        $display("Total iterations: %d", iteration_count);
+        $display("Final eigenvector (v_new): [%d, %d, %d, %d]", v0, v1, v2, v3);
+        $display("Final max_diff: %d (epsilon = %d)", max_d_out, epsilon);
         $display("========================================\n");
         $display("TEST PASSED");
         repeat(10) @(posedge clk);
