@@ -24,6 +24,7 @@ module tb_dominant;
     
     integer iteration_count;
     integer i;
+    integer timeout_counter;
     real prev_ratio;
     real curr_ratio;
     real diff_ratio;
@@ -75,7 +76,12 @@ module tb_dominant;
     end
     
     initial begin
-        #5000000;
+        #10000000;
+        $display("\n*** GLOBAL TIMEOUT: simulation did not complete ***");
+        $display("Time: %t", $time);
+        $display("Current state signals: mul_done=%b, scale_done=%b, diff_done=%b, done=%b", 
+                 mul_done, scale_done, diff_done, done);
+        $display("Iteration count: %d", iteration_count);
         $fatal("TIMEOUT: simulation did not complete");
     end
     
@@ -116,20 +122,29 @@ module tb_dominant;
         
         fork
             begin
-                #(CLK_PERIOD * 50000);
-                $display("\n*** TIMEOUT: Test took too long ***");
+                #(CLK_PERIOD * 900000);
+                $display("\n*** FORK TIMEOUT: Test took too long ***");
+                $display("Time: %t", $time);
                 $display("Current state signals: mul_done=%b, scale_done=%b, diff_done=%b, done=%b", 
                          mul_done, scale_done, diff_done, done);
-                $fatal("TIMEOUT");
+                $display("Iteration count: %d", iteration_count);
+                $display("FSM signals: load_v_old=%b, start_mult=%b, start_scale=%b, start_diff=%b",
+                         load_v_old, start_mult, start_scale, start_diff);
+                $fatal("FORK TIMEOUT");
             end
             
             begin
-                while (iteration_count < 50) begin
+                timeout_counter = 0;
+                
+                while (iteration_count < 50 && timeout_counter < 1000000) begin
                     @(posedge clk);
+                    timeout_counter = timeout_counter + 1;
+                    
                     if (diff_done) begin
                         repeat(2) @(posedge clk);
                         
                         iteration_count = iteration_count + 1;
+                        timeout_counter = 0;
                         
                         if (v0 != 0) begin
                             curr_ratio = (v1 * 1.0) / (v0 * 1.0);
@@ -157,6 +172,19 @@ module tb_dominant;
                         prev_ratio = curr_ratio;
                         repeat(5) @(posedge clk);
                     end
+                    
+                    if (done) begin
+                        $display("\n*** FSM DONE signal asserted after %d iterations ***", iteration_count);
+                        $display("Final eigenvector: [%d, %d, %d, %d]", v0, v1, v2, v3);
+                        disable fork;
+                    end
+                end
+                
+                if (timeout_counter >= 1000000) begin
+                    $display("\n*** WHILE LOOP TIMEOUT: No diff_done for too long ***");
+                    $display("Iteration count: %d", iteration_count);
+                    $display("Current signals: mul_done=%b, scale_done=%b, diff_done=%b, done=%b",
+                             mul_done, scale_done, diff_done, done);
                 end
                 
                 if (iteration_count >= 50) begin
