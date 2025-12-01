@@ -21,6 +21,7 @@ VERILOG_SOURCES = \
 	../rtl/vector_diff.v \
 	../rtl/matrix_vector_mult.v \
 	../rtl/matrix_memory.v \
+	../rtl/multi_cycle_divider.v \
 	../top/dominant_fsm.v \
 	../top/dominant_datapath.v
 
@@ -34,7 +35,7 @@ test_all:
 	rm -rf sim_build && $(MAKE) TEST=test_max_finder.py TOPLEVEL=max_finder VERILOG_SOURCES=../rtl/max_finder.v MODULE=test_max_finder
 	rm -rf sim_build && $(MAKE) TEST=test_vector_register.py TOPLEVEL=vector_register VERILOG_SOURCES=../rtl/vector_register.v MODULE=test_vector_register
 	rm -rf sim_build && $(MAKE) TEST=test_matrix_vector_mult.py TOPLEVEL=matrix_vector_mult VERILOG_SOURCES="../rtl/matrix_vector_mult.v ../rtl/max_finder.v" MODULE=test_matrix_vector_mult
-	rm -rf sim_build && $(MAKE) TEST=test_vector_scale.py TOPLEVEL=vector_scale VERILOG_SOURCES="../rtl/vector_scale.v ../rtl/max_finder.v" MODULE=test_vector_scale
+	rm -rf sim_build && $(MAKE) TEST=test_vector_scale.py TOPLEVEL=vector_scale VERILOG_SOURCES="../rtl/vector_scale.v ../rtl/max_finder.v ../rtl/multi_cycle_divider.v" MODULE=test_vector_scale
 	rm -rf sim_build && $(MAKE) TEST=test_vector_diff.py TOPLEVEL=vector_diff VERILOG_SOURCES="../rtl/vector_diff.v ../rtl/abs_diff.v ../rtl/max_finder.v" MODULE=test_vector_diff
 	rm -rf sim_build && $(MAKE) TEST=test_dominant_fsm.py TOPLEVEL=dominant_fsm VERILOG_SOURCES=../top/dominant_fsm.v MODULE=test_dominant_fsm
 	rm -rf sim_build && $(MAKE) TEST=test_dominant_datapath.py TOPLEVEL=dominant_datapath VERILOG_SOURCES="$(VERILOG_SOURCES)" MODULE=test_dominant_datapath
@@ -56,7 +57,7 @@ test_matrix_vector_mult:
 	$(MAKE) TEST=test_matrix_vector_mult.py TOPLEVEL=matrix_vector_mult VERILOG_SOURCES="../rtl/matrix_vector_mult.v ../rtl/max_finder.v" MODULE=test_matrix_vector_mult
 
 test_vector_scale:
-	$(MAKE) TEST=test_vector_scale.py TOPLEVEL=vector_scale VERILOG_SOURCES="../rtl/vector_scale.v ../rtl/max_finder.v" MODULE=test_vector_scale
+	$(MAKE) TEST=test_vector_scale.py TOPLEVEL=vector_scale VERILOG_SOURCES="../rtl/vector_scale.v ../rtl/max_finder.v ../rtl/multi_cycle_divider.v" MODULE=test_vector_scale
 
 test_vector_diff:
 	$(MAKE) TEST=test_vector_diff.py TOPLEVEL=vector_diff VERILOG_SOURCES="../rtl/vector_diff.v ../rtl/abs_diff.v ../rtl/max_finder.v" MODULE=test_vector_diff

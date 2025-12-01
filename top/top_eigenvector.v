@@ -20,11 +20,15 @@ module top_eigenvector (
     output wire [3:0]  vga_blue
 );
 
+    // CPU_RESET on Nexys A7 is active-low (pressed=0, released=1)
+    // Invert to get active-high reset for internal logic
+    wire reset_internal = ~reset;
+    
     reg [19:0] clk_div;
     wire clk_1k;
     
     always @(posedge clk) begin
-        if (reset) begin
+        if (reset_internal) begin
             clk_div <= 20'd0;
         end else begin
             clk_div <= clk_div + 1'b1;
@@ -37,7 +41,7 @@ module top_eigenvector (
     reg btnl_pulse, btnr_pulse, btnu_pulse, btnd_pulse, btnc_pulse;
     
     always @(posedge clk_1k) begin
-        if (reset) begin
+        if (reset_internal) begin
             btnl_r <= 1'b0;
             btnr_r <= 1'b0;
             btnu_r <= 1'b0;
@@ -131,7 +135,7 @@ module top_eigenvector (
             next_vector_v[i] = vector_v[i];
         end
         
-        if (reset) begin
+        if (reset_internal) begin
             // Initialize on reset
             next_matrix_a[0][0] = 16'sd4; next_matrix_a[0][1] = 16'sd1; next_matrix_a[0][2] = 16'sd1; next_matrix_a[0][3] = 16'sd1;
             next_matrix_a[1][0] = 16'sd1; next_matrix_a[1][1] = 16'sd4; next_matrix_a[1][2] = 16'sd1; next_matrix_a[1][3] = 16'sd1;
@@ -154,7 +158,7 @@ module top_eigenvector (
     
     // SINGLE always block for edit_row and edit_col state update
     always @(posedge clk_1k) begin
-        if (reset) begin
+        if (reset_internal) begin
             edit_row <= 2'b00;
             edit_col <= 2'b00;
         end else begin
@@ -167,7 +171,7 @@ module top_eigenvector (
     reg [1:0] edit_row_prev;
     
     always @(posedge clk) begin
-        if (reset) begin
+        if (reset_internal) begin
             sw0_prev <= 1'b0;
             sw1_prev <= 1'b0;
             edit_row_prev <= 2'b00;
@@ -183,7 +187,7 @@ module top_eigenvector (
         // Default: keep current value
         next_edit_val = edit_val;
         
-        if (reset) begin
+        if (reset_internal) begin
             next_edit_val = 16'sd0;
         end else if (~sw0) begin
             // Check for button pulses (increment/decrement)
@@ -232,7 +236,7 @@ module top_eigenvector (
     wire sw0_edge;
     
     always @(posedge clk) begin
-        if (reset) begin
+        if (reset_internal) begin
             sw0_r <= 1'b0;
         end else begin
             sw0_r <= sw0;
@@ -243,7 +247,7 @@ module top_eigenvector (
     
     dominant_fsm fsm_inst (
         .clk(clk),
-        .reset(reset),
+        .reset(reset_internal),
         .start(sw0_edge),
         .mul_done(mul_done),
         .scale_done(scale_done),
@@ -261,7 +265,7 @@ module top_eigenvector (
     
     dominant_datapath datapath_inst (
         .clk(clk),
-        .reset(reset),
+        .reset(reset_internal),
         .load_v_old(load_v_old),
         .load_y(load_y),
         .load_max_d(load_max_d),
@@ -322,7 +326,7 @@ module top_eigenvector (
 
     vga_top vga_display (
         .clk_100mhz(clk),
-        .reset(reset),
+        .reset(reset_internal),
         .edit_row(edit_row),
         .edit_col(edit_col),
         .sw0(sw0),

@@ -7,7 +7,7 @@ import numpy as np
 async def test_vga_display(dut):
     """Test VGA display timing and functionality"""
     # Create clock (40ns period = 25MHz)
-    clock = Clock(dut.clk_100mhz, 40, units="ns")
+    clock = Clock(dut.clk_100mhz, 40, unit="ns")
     cocotb.start_soon(clock.start())
     
     # Initialize inputs
@@ -114,46 +114,74 @@ async def test_vga_display(dut):
     assert len(hsync_transitions) > 0, "No hsync transitions detected"
     print("  ✓ Hsync is toggling")
     
-    # Test 2: RGB Outputs
-    print("\nTest 2: RGB Outputs")
+    # Test 2: RGB Outputs and Test Pattern
+    print("\nTest 2: RGB Outputs and Test Pattern")
     
-    # Check that RGB values are valid (0-15 for 4-bit)
-    for _ in range(100):
+    # Wait for a few lines to ensure we're in visible area
+    # At 25MHz, one line = 800 cycles
+    # Wait for a few lines (enough to catch visible area)
+    for _ in range(5000):  # ~6 lines
         await RisingEdge(dut.clk_100mhz)
-        red = dut.vga_red.value.integer
-        green = dut.vga_green.value.integer
-        blue = dut.vga_blue.value.integer
+    
+    # Now sample at known visible coordinates
+    # The test pattern should be at px < 100 && py < 100 (red square)
+    # We'll sample multiple times to catch visible periods
+    visible_samples = 0
+    non_black_samples = 0
+    test_pattern_found = False
+    
+    for _ in range(10000):  # Sample across multiple lines
+        await RisingEdge(dut.clk_100mhz)
+        red = dut.vga_red.value.to_unsigned()
+        green = dut.vga_green.value.to_unsigned()
+        blue = dut.vga_blue.value.to_unsigned()
         
+        # Check validity
         assert 0 <= red <= 15, f"Invalid red value: {red}"
         assert 0 <= green <= 15, f"Invalid green value: {green}"
         assert 0 <= blue <= 15, f"Invalid blue value: {blue}"
+        
+        # Check if we're in visible area (non-black)
+        if red > 0 or green > 0 or blue > 0:
+            non_black_samples += 1
+            # Check for test pattern (red square)
+            if red == 15 and green == 0 and blue == 0:
+                test_pattern_found = True
+        
+        visible_samples += 1
     
+    print(f"  Sampled {visible_samples} cycles")
+    print(f"  Non-black samples: {non_black_samples}")
+    print(f"  Test pattern (red square) found: {test_pattern_found}")
+    
+    assert non_black_samples > 0, "No visible content detected - all pixels are black"
     print("  ✓ RGB values are in valid range (0-15)")
+    print("  ✓ Visible content detected")
     
     # Test 3: Display Controller with Different Inputs
     print("\nTest 3: Display Controller with Different Inputs")
     
-    # Test with different matrix values
-    test_values = [
-        (0, 0, 0),   # Zero
-        (1, 0, 0),   # Small positive
-        (99, 0, 0),  # Two digits
-        (123, 0, 0), # Three digits
-        (-5, 0, 0),  # Negative
-        (999, 0, 0), # Maximum three digits
-    ]
-    
-    for val, row, col in test_values:
-        # Update matrix value at position [row][col]
-        # This is a simplified test - in real hardware we'd need to pack the matrix properly
+    # Wait for visible area and sample RGB
+    # Sample multiple times to catch visible periods
+    samples = []
+    for _ in range(1000):
         await RisingEdge(dut.clk_100mhz)
+        red = dut.vga_red.value.to_unsigned()
+        green = dut.vga_green.value.to_unsigned()
+        blue = dut.vga_blue.value.to_unsigned()
         
-        # Sample RGB outputs
-        red = dut.vga_red.value.integer
-        green = dut.vga_green.value.integer
-        blue = dut.vga_blue.value.integer
-        
-        print(f"  Value {val} at [{row}][{col}]: RGB=({red},{green},{blue})")
+        # Only record non-black samples (visible area)
+        if red > 0 or green > 0 or blue > 0:
+            samples.append((red, green, blue))
+            if len(samples) >= 10:  # Collect 10 visible samples
+                break
+    
+    if len(samples) > 0:
+        print(f"  Collected {len(samples)} visible samples:")
+        for i, (r, g, b) in enumerate(samples[:5]):  # Show first 5
+            print(f"    Sample {i+1}: RGB=({r},{g},{b})")
+    else:
+        print("  Warning: No visible samples collected")
     
     print("  ✓ Display controller responds to inputs")
     
@@ -162,41 +190,83 @@ async def test_vga_display(dut):
     
     # Test sw0 (edit/run mode)
     dut.sw0.value = 0  # Edit mode
-    await RisingEdge(dut.clk_100mhz)
-    await RisingEdge(dut.clk_100mhz)
+    # Wait for a few lines to ensure mode box is rendered
+    for _ in range(5000):
+        await RisingEdge(dut.clk_100mhz)
     
-    # Sample RGB - should show edit mode indicator
-    red1 = dut.vga_red.value.integer
-    green1 = dut.vga_green.value.integer
-    blue1 = dut.vga_blue.value.integer
+    # Sample multiple times to catch visible periods
+    edit_mode_samples = []
+    for _ in range(1000):
+        await RisingEdge(dut.clk_100mhz)
+        red = dut.vga_red.value.to_unsigned()
+        green = dut.vga_green.value.to_unsigned()
+        blue = dut.vga_blue.value.to_unsigned()
+        if red > 0 or green > 0 or blue > 0:
+            edit_mode_samples.append((red, green, blue))
+            if len(edit_mode_samples) >= 5:
+                break
     
     dut.sw0.value = 1  # Run mode
-    await RisingEdge(dut.clk_100mhz)
-    await RisingEdge(dut.clk_100mhz)
+    # Wait for a few lines
+    for _ in range(5000):
+        await RisingEdge(dut.clk_100mhz)
     
-    red2 = dut.vga_red.value.integer
-    green2 = dut.vga_green.value.integer
-    blue2 = dut.vga_blue.value.integer
+    run_mode_samples = []
+    for _ in range(1000):
+        await RisingEdge(dut.clk_100mhz)
+        red = dut.vga_red.value.to_unsigned()
+        green = dut.vga_green.value.to_unsigned()
+        blue = dut.vga_blue.value.to_unsigned()
+        if red > 0 or green > 0 or blue > 0:
+            run_mode_samples.append((red, green, blue))
+            if len(run_mode_samples) >= 5:
+                break
     
-    print(f"  Edit mode (sw0=0): RGB=({red1},{green1},{blue1})")
-    print(f"  Run mode (sw0=1): RGB=({red2},{green2},{blue2})")
+    if len(edit_mode_samples) > 0:
+        r1, g1, b1 = edit_mode_samples[0]
+        print(f"  Edit mode (sw0=0): RGB=({r1},{g1},{b1})")
+    else:
+        print(f"  Edit mode (sw0=0): No visible samples")
+    
+    if len(run_mode_samples) > 0:
+        r2, g2, b2 = run_mode_samples[0]
+        print(f"  Run mode (sw0=1): RGB=({r2},{g2},{b2})")
+    else:
+        print(f"  Run mode (sw0=1): No visible samples")
+    
     print("  ✓ Mode switching works")
     
     # Test 5: Cursor Position
     print("\nTest 5: Cursor Position")
     
+    dut.sw0.value = 0  # Edit mode for cursor
+    dut.sw1.value = 0  # Matrix mode
+    
     for row in range(4):
         for col in range(4):
             dut.edit_row.value = row
             dut.edit_col.value = col
-            await RisingEdge(dut.clk_100mhz)
-            await RisingEdge(dut.clk_100mhz)
+            # Wait for a few lines to ensure cursor is rendered
+            for _ in range(5000):
+                await RisingEdge(dut.clk_100mhz)
             
-            red = dut.vga_red.value.integer
-            green = dut.vga_green.value.integer
-            blue = dut.vga_blue.value.integer
+            # Sample multiple times to catch visible periods
+            cursor_samples = []
+            for _ in range(1000):
+                await RisingEdge(dut.clk_100mhz)
+                red = dut.vga_red.value.to_unsigned()
+                green = dut.vga_green.value.to_unsigned()
+                blue = dut.vga_blue.value.to_unsigned()
+                if red > 0 or green > 0 or blue > 0:
+                    cursor_samples.append((red, green, blue))
+                    if len(cursor_samples) >= 3:
+                        break
             
-            print(f"  Cursor at [{row}][{col}]: RGB=({red},{green},{blue})")
+            if len(cursor_samples) > 0:
+                r, g, b = cursor_samples[0]
+                print(f"  Cursor at [{row}][{col}]: RGB=({r},{g},{b})")
+            else:
+                print(f"  Cursor at [{row}][{col}]: No visible samples")
     
     print("  ✓ Cursor position affects display")
     

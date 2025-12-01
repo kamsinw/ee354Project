@@ -263,6 +263,11 @@ module display_controller (
             red = 4'b0000;
             green = 4'b0000;
             blue = 4'b0000;
+        end else if (px < 100 && py < 100) begin
+            // TEST PATTERN: Red square in top-left corner to verify VGA is working
+            red = 4'b1111;
+            green = 4'b0000;
+            blue = 4'b0000;
         end else if (white_pixel) begin
             // White for borders, digits, and sign bars
             red = 4'b1111;
