@@ -1,18 +1,19 @@
 `timescale 1ns / 1ps
 
-// vga_top.v - 
+// vga_top.v - VGA top module following EE354_vga_demo pattern
 
 module vga_top (
     input  wire clk_100mhz,
     input  wire reset,
     input  wire [1:0] edit_row,
     input  wire [1:0] edit_col,
+    input  wire cell_locked,
     input  wire sw0,
     input  wire sw1,
     input  wire [2:0] sw_eps,
     input  wire signed [255:0] matrix_a,
     input  wire signed [63:0] vector_v,
-    input  wire [6:0] fsm_state,
+    input  wire [7:0] fsm_state,
     input  wire fsm_done,
     input  wire [7:0] iteration_count,
     input  wire signed [63:0] v_old,
@@ -24,50 +25,45 @@ module vga_top (
     output wire [3:0] vga_blue
 );
 
-    // Divide 62.5 MHz down to 25 MHz (divide by 2.5)
-    // Input: 62.5 MHz (16ns period), Output: 25 MHz (40ns period)
-    // Use a 5-state counter (0-4) and toggle at states 0 and 2
-    // This gives 2.5 input cycles per output cycle
-    reg clk_25mhz_reg;
-    reg [2:0] clk_div_counter;
+    // Simple clock divider: 100 MHz -> 25 MHz (divide by 4)
+    // Following demo pattern: two-stage toggle divider
+    reg pulse;
+    reg clk25;
     
-    always @(posedge clk_100mhz) begin
-        if (reset) begin
-            clk_25mhz_reg <= 1'b0;
-            clk_div_counter <= 3'd0;
-        end else begin
-            if (clk_div_counter == 3'd0 || clk_div_counter == 3'd2) begin
-                clk_25mhz_reg <= ~clk_25mhz_reg;
-            end
-            if (clk_div_counter == 3'd4) begin
-                clk_div_counter <= 3'd0;
-            end else begin
-                clk_div_counter <= clk_div_counter + 1'b1;
-            end
-        end
+    initial begin
+        pulse = 1'b0;
+        clk25 = 1'b0;
     end
     
-    wire clk_25mhz = clk_25mhz_reg;
-
-    wire [9:0] hcount, vcount;
-    wire visible;
+    always @(posedge clk_100mhz)
+        pulse <= ~pulse;
     
+    always @(posedge pulse)
+        clk25 <= ~clk25;
+
+    wire bright;
+    wire [9:0] hCount, vCount;
+    wire [11:0] rgb;
+    
+    // VGA timing generator (matches demo's display_controller)
     counter vga_counter (
-        .clk(clk_25mhz),
-        .reset(reset),
-        .hcount(hcount),
-        .vcount(vcount),
-        .hsync(vga_hsync),
-        .vsync(vga_vsync),
-        .visible(visible)
+        .clk(clk25),
+        .hSync(vga_hsync),
+        .vSync(vga_vsync),
+        .bright(bright),
+        .hCount(hCount),
+        .vCount(vCount)
     );
 
+    // Display renderer 
     display_controller renderer (
-        .hcount(hcount),
-        .vcount(vcount),
-        .visible(visible),
+        .clk(clk25),
+        .bright(bright),
+        .hCount(hCount),
+        .vCount(vCount),
         .edit_row(edit_row),
         .edit_col(edit_col),
+        .cell_locked(cell_locked),
         .sw0(sw0),
         .sw1(sw1),
         .sw_eps(sw_eps),
@@ -78,9 +74,11 @@ module vga_top (
         .iteration_count(iteration_count),
         .v_old(v_old),
         .v_new(v_new),
-        .red(vga_red),
-        .green(vga_green),
-        .blue(vga_blue)
+        .rgb(rgb)
     );
+    
+    assign vga_red = rgb[11:8];
+    assign vga_green = rgb[7:4];
+    assign vga_blue = rgb[3:0];
 
 endmodule

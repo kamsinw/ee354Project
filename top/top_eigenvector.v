@@ -13,6 +13,7 @@ module top_eigenvector (
     input  wire        btnc,
     output wire [7:0]  led,
     output wire        ca, cb, cc, cd, ce, cf, cg, dp,
+    output wire        an0, an1, an2, an3, an4, an5, an6, an7,
     output wire        vga_hsync,
     output wire        vga_vsync,
     output wire [3:0]  vga_red,
@@ -24,29 +25,25 @@ module top_eigenvector (
     // Invert to get active-high reset for internal logic
     wire reset_internal = ~reset;
     
-    reg [19:0] clk_div;
-    wire clk_1k;
-    
-    always @(posedge clk) begin
-        if (reset_internal) begin
-            clk_div <= 20'd0;
-        end else begin
-            clk_div <= clk_div + 1'b1;
-        end
-    end
-    
-    assign clk_1k = clk_div[16];
-    reg btnl_r, btnr_r, btnu_r, btnd_r, btnc_r;
+    // Button debouncing on main clock (clk = 100 MHz)
+    // Using longer shift registers for reliable debouncing at higher frequency
+    reg [15:0] btnl_sr, btnr_sr, btnu_sr, btnd_sr, btnc_sr;
+    reg btnl_stable, btnr_stable, btnu_stable, btnd_stable, btnc_stable;
     reg btnl_d, btnr_d, btnu_d, btnd_d, btnc_d;
     reg btnl_pulse, btnr_pulse, btnu_pulse, btnd_pulse, btnc_pulse;
     
-    always @(posedge clk_1k) begin
+    always @(posedge clk) begin
         if (reset_internal) begin
-            btnl_r <= 1'b0;
-            btnr_r <= 1'b0;
-            btnu_r <= 1'b0;
-            btnd_r <= 1'b0;
-            btnc_r <= 1'b0;
+            btnl_sr <= 16'd0;
+            btnr_sr <= 16'd0;
+            btnu_sr <= 16'd0;
+            btnd_sr <= 16'd0;
+            btnc_sr <= 16'd0;
+            btnl_stable <= 1'b0;
+            btnr_stable <= 1'b0;
+            btnu_stable <= 1'b0;
+            btnd_stable <= 1'b0;
+            btnc_stable <= 1'b0;
             btnl_d <= 1'b0;
             btnr_d <= 1'b0;
             btnu_d <= 1'b0;
@@ -58,21 +55,33 @@ module top_eigenvector (
             btnd_pulse <= 1'b0;
             btnc_pulse <= 1'b0;
         end else begin
-            btnl_r <= btnl;
-            btnr_r <= btnr;
-            btnu_r <= btnu;
-            btnd_r <= btnd;
-            btnc_r <= btnc;
-            btnl_d <= btnl_r;
-            btnr_d <= btnr_r;
-            btnu_d <= btnu_r;
-            btnd_d <= btnd_r;
-            btnc_d <= btnc_r;
-            btnl_pulse <= btnl_r & ~btnl_d;
-            btnr_pulse <= btnr_r & ~btnr_d;
-            btnu_pulse <= btnu_r & ~btnu_d;
-            btnd_pulse <= btnd_r & ~btnd_d;
-            btnc_pulse <= btnc_r & ~btnc_d;
+            // Shift in new button values
+            btnl_sr <= {btnl_sr[14:0], btnl};
+            btnr_sr <= {btnr_sr[14:0], btnr};
+            btnu_sr <= {btnu_sr[14:0], btnu};
+            btnd_sr <= {btnd_sr[14:0], btnd};
+            btnc_sr <= {btnc_sr[14:0], btnc};
+            
+            // Button is stable if all bits in shift register are the same
+            btnl_stable <= (btnl_sr == 16'hFFFF) ? 1'b1 : (btnl_sr == 16'h0000) ? 1'b0 : btnl_stable;
+            btnr_stable <= (btnr_sr == 16'hFFFF) ? 1'b1 : (btnr_sr == 16'h0000) ? 1'b0 : btnr_stable;
+            btnu_stable <= (btnu_sr == 16'hFFFF) ? 1'b1 : (btnu_sr == 16'h0000) ? 1'b0 : btnu_stable;
+            btnd_stable <= (btnd_sr == 16'hFFFF) ? 1'b1 : (btnd_sr == 16'h0000) ? 1'b0 : btnd_stable;
+            btnc_stable <= (btnc_sr == 16'hFFFF) ? 1'b1 : (btnc_sr == 16'h0000) ? 1'b0 : btnc_stable;
+            
+            // Delayed versions for edge detection
+            btnl_d <= btnl_stable;
+            btnr_d <= btnr_stable;
+            btnu_d <= btnu_stable;
+            btnd_d <= btnd_stable;
+            btnc_d <= btnc_stable;
+            
+            // Rising edge detection
+            btnl_pulse <= btnl_stable & ~btnl_d;
+            btnr_pulse <= btnr_stable & ~btnr_d;
+            btnu_pulse <= btnu_stable & ~btnu_d;
+            btnd_pulse <= btnd_stable & ~btnd_d;
+            btnc_pulse <= btnc_stable & ~btnc_d;
         end
     end
     
@@ -81,6 +90,10 @@ module top_eigenvector (
     reg signed [15:0] edit_val;
     reg signed [15:0] matrix_a [0:3][0:3];
     reg signed [15:0] vector_v [0:3];
+    
+    // Cell locked state - controls edit mode behavior
+    // 0 = unlocked (can navigate), 1 = locked (editing value)
+    reg cell_locked;
     
     // Next-state logic for edit_row and edit_col (combinational)
     // MUST be declared as reg since assigned in always block
@@ -102,7 +115,8 @@ module top_eigenvector (
         next_edit_row = edit_row;
         next_edit_col = edit_col;
         
-        if (~sw0) begin
+        // Navigation only works when in edit mode AND cell is NOT locked
+        if (~sw0 && ~cell_locked) begin
             // Handle row changes
             if (btnu_pulse) begin
                 if (edit_row > 2'b00)
@@ -112,16 +126,18 @@ module top_eigenvector (
                     next_edit_row = edit_row + 1'b1;
             end
             
-            // Handle column changes
-            if (btnl_pulse) begin
-                if (edit_col > 2'b00)
-                    next_edit_col = edit_col - 1'b1;
-            end else if (btnr_pulse) begin
-                if (edit_col < 2'b11)
-                    next_edit_col = edit_col + 1'b1;
+            // Handle column changes (matrix only)
+            if (sw1 == 1'b0) begin  // Matrix mode
+                if (btnl_pulse) begin
+                    if (edit_col > 2'b00)
+                        next_edit_col = edit_col - 1'b1;
+                end else if (btnr_pulse) begin
+                    if (edit_col < 2'b11)
+                        next_edit_col = edit_col + 1'b1;
+                end
             end
         end
-        // In run mode (sw0 == 1), keep current values (already set as default)
+        // When locked or in run mode, keep current values (already set as default)
     end
     
     // SINGLE always @(*) block for next-state computation (matrix_a/vector_v)
@@ -144,8 +160,8 @@ module top_eigenvector (
             for (i = 0; i < 4; i = i + 1) begin
                 next_vector_v[i] = 16'sd1;
             end
-        end else if (~sw0 && btnc_pulse) begin
-            // Edit mode: update the edited cell
+        end else if (~sw0 && btnc_pulse && cell_locked) begin
+            // Edit mode with cell locked: SAVE value and unlock
             if (sw1 == 1'b0) begin
                 // Edit matrix
                 next_matrix_a[edit_row][edit_col] = edit_val;
@@ -156,14 +172,25 @@ module top_eigenvector (
         end
     end
     
-    // SINGLE always block for edit_row and edit_col state update
-    always @(posedge clk_1k) begin
+    // SINGLE always block for edit_row, edit_col, and cell_locked state update
+    // Now on main clock for proper synchronization with VGA
+    always @(posedge clk) begin
         if (reset_internal) begin
             edit_row <= 2'b00;
             edit_col <= 2'b00;
+            cell_locked <= 1'b0;
         end else begin
             edit_row <= next_edit_row;
             edit_col <= next_edit_col;
+            
+            // Handle cell_locked state transitions with BTNC
+            if (~sw0 && btnc_pulse) begin
+                // Toggle locked state when BTNC pressed in edit mode
+                cell_locked <= ~cell_locked;
+            end else if (sw0) begin
+                // Force unlock when entering run mode
+                cell_locked <= 1'b0;
+            end
         end
     end
     
@@ -182,6 +209,16 @@ module top_eigenvector (
         end
     end
     
+    reg cell_locked_prev;
+    
+    always @(posedge clk) begin
+        if (reset_internal) begin
+            cell_locked_prev <= 1'b0;
+        end else begin
+            cell_locked_prev <= cell_locked;
+        end
+    end
+    
     // SINGLE always @(*) block for next_edit_val computation
     always @(*) begin
         // Default: keep current value
@@ -190,14 +227,24 @@ module top_eigenvector (
         if (reset_internal) begin
             next_edit_val = 16'sd0;
         end else if (~sw0) begin
-            // Check for button pulses (increment/decrement)
-            if (btnl_pulse) begin
-                next_edit_val = edit_val - 16'sd1;
-            end else if (btnr_pulse) begin
-                next_edit_val = edit_val + 16'sd1;
+            // When locking onto a cell (transition from unlocked to locked), load current value
+            if (~cell_locked_prev && cell_locked) begin
+                if (sw1 == 1'b0) begin
+                    next_edit_val = matrix_a[edit_row][edit_col];
+                end else begin
+                    next_edit_val = vector_v[edit_row];
+                end
             end
-            // Check for mode/row/col changes (load from matrix/vector)
-            else if ((sw0_prev & ~sw0) || (sw1_prev != sw1) || (edit_row_prev != edit_row)) begin
+            // When cell is locked, allow value editing with left/right buttons
+            else if (cell_locked) begin
+                if (btnl_pulse) begin
+                    next_edit_val = edit_val - 16'sd1;
+                end else if (btnr_pulse) begin
+                    next_edit_val = edit_val + 16'sd1;
+                end
+            end
+            // When not locked and navigating, show preview of cell value
+            else if ((sw1_prev != sw1) || (edit_row_prev != edit_row)) begin
                 if (sw1 == 1'b0) begin
                     next_edit_val = matrix_a[edit_row][edit_col];
                 end else begin
@@ -231,7 +278,7 @@ module top_eigenvector (
     wire mul_done, scale_done, diff_done;
     wire signed [15:0] max_d_out;
     wire signed [63:0] v_out;
-    wire [6:0] fsm_state;
+    wire [7:0] fsm_state;
     wire signed [15:0] v_old0, v_old1, v_old2, v_old3;
     
     // Iteration counter
@@ -320,22 +367,74 @@ module top_eigenvector (
         .v_old3(v_old3)
     );
     
-    assign led[0] = fsm_done;
-    assign led[1] = mul_done;
-    assign led[2] = scale_done;
-    assign led[3] = diff_done;
-    assign led[4] = sw0;
-    assign led[5] = sw1;
-    assign led[7:6] = 2'b00;
+    // ========================================================================
+    // DEBUG: LED ASSIGNMENTS
+    // ========================================================================
+    // LED[0]: Cell locked indicator (ON when editing a cell value)
+    // LED[1]: Any button pulse active (flashes when button pressed)
+    // LED[2]: Mode indicator (sw0: 0=Edit, 1=Run)
+    // LED[3]: Edit target (sw1: 0=Matrix, 1=Vector)
+    // LED[4:5]: Current edit row (binary)
+    // LED[6:7]: Current edit col (binary)
     
-    assign ca = 1'b1;
-    assign cb = 1'b1;
-    assign cc = 1'b1;
-    assign cd = 1'b1;
-    assign ce = 1'b1;
-    assign cf = 1'b1;
-    assign cg = 1'b1;
-    assign dp = 1'b1;
+    wire any_button_pulse = btnl_pulse | btnr_pulse | btnu_pulse | btnd_pulse | btnc_pulse;
+    
+    assign led[0] = cell_locked;  // Shows locked/unlocked state
+    assign led[1] = any_button_pulse;
+    assign led[2] = sw0;
+    assign led[3] = sw1;
+    assign led[5:4] = edit_row;
+    assign led[7:6] = edit_col;
+    
+    // ========================================================================
+    // DEBUG: SEVEN SEGMENT DISPLAY
+    // ========================================================================
+    // Display useful debug information based on mode:
+    // - Edit mode (sw0=0): Show current edit value (with sign handling)
+    // - Run mode (sw0=1): Show iteration count
+    
+    reg [15:0] ssd_display_value;
+    wire [3:0] ssd_anode;
+    wire [6:0] ssd_segments;
+    
+    // Select what to display based on mode
+    always @(*) begin
+        if (sw0 == 1'b0) begin
+            // Edit mode: Display edit_val
+            // Handle negative numbers by displaying absolute value
+            // (The MSB LED can indicate sign)
+            if (edit_val[15] == 1'b1) begin
+                // Negative: display 2's complement magnitude
+                ssd_display_value = (~edit_val + 16'd1) & 16'h7FFF;
+            end else begin
+                // Positive: display as-is
+                ssd_display_value = edit_val & 16'h7FFF;
+            end
+        end else begin
+            // Run mode: Display iteration count
+            ssd_display_value = {8'd0, iteration_count};
+        end
+    end
+    
+    // Instantiate 7-segment display counter (4 digits)
+    ssd_counter ssd_debug (
+        .clk(clk),
+        .displayNumber(ssd_display_value),
+        .anode(ssd_anode),
+        .ssdOut(ssd_segments)
+    );
+    
+    // Map to individual segment outputs (ssd_segments is already active-low)
+    assign {ca, cb, cc, cd, ce, cf, cg} = ssd_segments;
+    
+    // Decimal point: active-low (0=on, 1=off)
+    // In edit mode: on for negative (dark), off for positive (lit)
+    // In run mode: always off (lit)
+    assign dp = (sw0 == 1'b0) ? edit_val[15] : 1'b1;
+    
+    // Map 4-bit anode to 8 anodes (use lower 4 digits, upper 4 off)
+    assign {an7, an6, an5, an4} = 4'b1111;  // Upper 4 digits off
+    assign {an3, an2, an1, an0} = ssd_anode; // Lower 4 digits active
     
     wire signed [16*16-1:0] matrix_a_packed;
     assign matrix_a_packed = {matrix_a[3][3], matrix_a[3][2], matrix_a[3][1], matrix_a[3][0],
@@ -354,6 +453,7 @@ module top_eigenvector (
         .reset(reset_internal),
         .edit_row(edit_row),
         .edit_col(edit_col),
+        .cell_locked(cell_locked),
         .sw0(sw0),
         .sw1(sw1),
         .sw_eps(sw_eps),

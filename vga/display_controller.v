@@ -1,634 +1,770 @@
 `timescale 1ns / 1ps
 
-// display_controller.v - VGA display controller for dominant eigenvector finder
+// display_controller.v - VGA display renderer
+// Layout:
+//   TOP-LEFT:     Editable Vector v (vertical with brackets) - what you edit with sw1=1
+//   TOP-RIGHT:    Bar chart (v_old bars | v_new bars) - shows computation progress
+//   BOTTOM-LEFT:  Matrix A (4x4 with brackets) - what you edit with sw1=0
+//   BOTTOM-RIGHT: Vector v_new (horizontal) + iteration counter
 
 module display_controller (
-    input  wire [9:0] hcount,
-    input  wire [9:0] vcount,
-    input  wire visible,
+    input  wire clk,
+    input  wire bright,
+    input  wire [9:0] hCount,
+    input  wire [9:0] vCount,
     input  wire [1:0] edit_row,
     input  wire [1:0] edit_col,
+    input  wire cell_locked,
     input  wire sw0,
     input  wire sw1,
     input  wire [2:0] sw_eps,
     input  wire signed [255:0] matrix_a,
-    input  wire signed [63:0] vector_v,
-    input  wire [6:0] fsm_state,
+    input  wire signed [63:0] vector_v,   // Editable initial vector
+    input  wire [7:0] fsm_state,
     input  wire fsm_done,
     input  wire [7:0] iteration_count,
-    input  wire signed [63:0] v_old,
-    input  wire signed [63:0] v_new,
-    output reg  [3:0] red,
-    output reg  [3:0] green,
-    output reg  [3:0] blue
+    input  wire signed [63:0] v_old,      // Previous iteration (for chart)
+    input  wire signed [63:0] v_new,      // Current iteration result (for chart)
+    output reg  [11:0] rgb
 );
 
-    // Screen regions
-    parameter BANNER_HEIGHT = 30;
-    parameter MATRIX_X = 20;
-    parameter MATRIX_Y = 50;
-    parameter CELL_SIZE = 40;
-    parameter VECTOR_X = 300;
-    parameter VECTOR_Y = 50;
-    parameter GRAPH_X = 200;
-    parameter GRAPH_Y = 300;
-    parameter GRAPH_WIDTH = 240;
-    parameter GRAPH_HEIGHT = 150;
-    parameter BAR_WIDTH = 20;
+    // ========================================================================
+    // COLORS
+    // ========================================================================
+    parameter BLACK   = 12'b0000_0000_0000;
+    parameter WHITE   = 12'b1111_1111_1111;
+    parameter YELLOW  = 12'b1111_1111_0000;
+    parameter CYAN    = 12'b0000_1111_1111;
+    parameter GREEN   = 12'b0000_1111_0000;
+    parameter RED     = 12'b1111_0000_0000;
+    parameter MAGENTA = 12'b1111_0000_1111;
+    parameter GRAY    = 12'b0100_0100_0100;
+    parameter BLUE    = 12'b0011_0011_1111;
+    parameter ORANGE  = 12'b1111_1000_0000;
+
+    // ========================================================================
+    // SCREEN LAYOUT CONSTANTS - Visible area: 640 x 480 pixels
+    // ========================================================================
+    
+    // ---- EDITABLE VECTOR V REGION (top-left) ----
+    // This is the vector you edit when sw1=1
+    parameter VEC_V_X0 = 20;
+    parameter VEC_V_X1 = 120;
+    parameter VEC_V_Y0 = 30;
+    parameter VEC_V_Y1 = 220;
+    parameter VEC_V_CELL_H = 45;
+    
+    // ---- CHART REGION (top-right) ----
+    parameter CHART_X0 = 160;
+    parameter CHART_X1 = 620;
+    parameter CHART_Y0 = 30;
+    parameter CHART_Y1 = 220;
+    parameter BAR_WIDTH = 45;
     parameter BAR_SPACING = 10;
+    parameter BAR_MAX_HEIGHT = 160;
     
-    wire [9:0] px = hcount;
-    wire [9:0] py = vcount;
+    // ---- MATRIX REGION (bottom-left) - LARGER to fit 4x4 ----
+    parameter MATRIX_X0 = 10;
+    parameter MATRIX_X1 = 190;   // Wider!
+    parameter MATRIX_Y0 = 250;
+    parameter MATRIX_Y1 = 470;
+    parameter MATRIX_CELL_SIZE = 42;  // Slightly smaller cells
     
-    // Unpack matrix and vectors
-    wire signed [15:0] matrix_a_unpack [0:3][0:3];
-    assign matrix_a_unpack[0][0] = matrix_a[15:0];
-    assign matrix_a_unpack[0][1] = matrix_a[31:16];
-    assign matrix_a_unpack[0][2] = matrix_a[47:32];
-    assign matrix_a_unpack[0][3] = matrix_a[63:48];
-    assign matrix_a_unpack[1][0] = matrix_a[79:64];
-    assign matrix_a_unpack[1][1] = matrix_a[95:80];
-    assign matrix_a_unpack[1][2] = matrix_a[111:96];
-    assign matrix_a_unpack[1][3] = matrix_a[127:112];
-    assign matrix_a_unpack[2][0] = matrix_a[143:128];
-    assign matrix_a_unpack[2][1] = matrix_a[159:144];
-    assign matrix_a_unpack[2][2] = matrix_a[175:160];
-    assign matrix_a_unpack[2][3] = matrix_a[191:176];
-    assign matrix_a_unpack[3][0] = matrix_a[207:192];
-    assign matrix_a_unpack[3][1] = matrix_a[223:208];
-    assign matrix_a_unpack[3][2] = matrix_a[239:224];
-    assign matrix_a_unpack[3][3] = matrix_a[255:240];
+    // ---- VEC_NEW REGION (bottom-right) ----
+    parameter VEC_NEW_X0 = 220;
+    parameter VEC_NEW_X1 = 540;
+    parameter VEC_NEW_Y0 = 320;
+    parameter VEC_NEW_Y1 = 390;
+    parameter VEC_NEW_CELL_W = 75;
     
-    wire signed [15:0] vector_v_unpack [0:3];
-    assign vector_v_unpack[0] = vector_v[15:0];
-    assign vector_v_unpack[1] = vector_v[31:16];
-    assign vector_v_unpack[2] = vector_v[47:32];
-    assign vector_v_unpack[3] = vector_v[63:48];
-    
-    wire signed [15:0] v_old_unpack [0:3];
-    assign v_old_unpack[0] = v_old[15:0];
-    assign v_old_unpack[1] = v_old[31:16];
-    assign v_old_unpack[2] = v_old[47:32];
-    assign v_old_unpack[3] = v_old[63:48];
-    
-    wire signed [15:0] v_new_unpack [0:3];
-    assign v_new_unpack[0] = v_new[15:0];
-    assign v_new_unpack[1] = v_new[31:16];
-    assign v_new_unpack[2] = v_new[47:32];
-    assign v_new_unpack[3] = v_new[63:48];
-    
-    // Region detection
-    wire in_banner = (py < BANNER_HEIGHT);
-    wire in_matrix = (px >= MATRIX_X) && (px < MATRIX_X + 4*CELL_SIZE) &&
-                     (py >= MATRIX_Y) && (py < MATRIX_Y + 4*CELL_SIZE);
-    wire in_vector = (px >= VECTOR_X) && (px < VECTOR_X + CELL_SIZE) &&
-                     (py >= VECTOR_Y) && (py < VECTOR_Y + 4*CELL_SIZE);
-    wire in_graph = (px >= GRAPH_X) && (px < GRAPH_X + GRAPH_WIDTH) &&
-                    (py >= GRAPH_Y) && (py < GRAPH_Y + GRAPH_HEIGHT);
-    
-    // Matrix cell coordinates
-    wire [1:0] matrix_row = (py - MATRIX_Y) / CELL_SIZE;
-    wire [1:0] matrix_col = (px - MATRIX_X) / CELL_SIZE;
-    wire [9:0] matrix_cell_x = px - MATRIX_X - (matrix_col * CELL_SIZE);
-    wire [9:0] matrix_cell_y = py - MATRIX_Y - (matrix_row * CELL_SIZE);
-    
-    // Vector cell coordinates
-    wire [1:0] vector_row = (py - VECTOR_Y) / CELL_SIZE;
-    wire [9:0] vector_cell_x = px - VECTOR_X;
-    wire [9:0] vector_cell_y = py - VECTOR_Y - (vector_row * CELL_SIZE);
-    
-    // Cursor detection
-    wire cursor_matrix = (sw1 == 1'b0) && (matrix_row == edit_row) && (matrix_col == edit_col);
-    wire cursor_vector = (sw1 == 1'b1) && (vector_row == edit_row);
-    wire cursor_border = (cursor_matrix && (
-                          (matrix_cell_x < 2) || (matrix_cell_x >= CELL_SIZE - 2) ||
-                          (matrix_cell_y < 2) || (matrix_cell_y >= CELL_SIZE - 2))) ||
-                         (cursor_vector && (
-                          (vector_cell_x < 2) || (vector_cell_x >= CELL_SIZE - 2) ||
-                          (vector_cell_y < 2) || (vector_cell_y >= CELL_SIZE - 2)));
-    
-    // FSM state decoding
-    localparam IDLE     = 7'b0000001;
-    localparam LOAD     = 7'b0000010;
-    localparam MULT     = 7'b0000100;
-    localparam SCALE    = 7'b0001000;
-    localparam DIFF     = 7'b0010000;
-    localparam CHECK    = 7'b0100000;
-    localparam DONE_ST  = 7'b1000000;
-    
-    wire state_edit = (fsm_state == IDLE) && (sw0 == 1'b0);
-    wire state_running = (fsm_state != IDLE) && (fsm_state != DONE_ST);
-    wire state_done = fsm_done;
+    // ---- ITER DISPLAY ----
+    parameter ITER_X0 = 560;
+    parameter ITER_Y0 = 340;
+
+    // ========================================================================
+    // VISIBLE PIXEL COORDINATES
+    // ========================================================================
+    wire [9:0] px = hCount - 10'd144;
+    wire [9:0] py = vCount - 10'd35;
     
     // ========================================================================
-    // BLOCK 1: Compute matrix_val, vector_val, abs values, and ones digits
+    // UNPACK INPUT DATA
     // ========================================================================
-    reg signed [15:0] matrix_val;
-    reg signed [15:0] vector_val;
-    reg [15:0] matrix_abs;
-    reg [15:0] vector_abs;
-    reg [3:0] matrix_ones;
-    reg [3:0] vector_ones;
+    // Matrix A (4x4) - editable with sw1=0
+    wire signed [15:0] A [0:3][0:3];
+    assign A[0][0] = matrix_a[15:0];
+    assign A[0][1] = matrix_a[31:16];
+    assign A[0][2] = matrix_a[47:32];
+    assign A[0][3] = matrix_a[63:48];
+    assign A[1][0] = matrix_a[79:64];
+    assign A[1][1] = matrix_a[95:80];
+    assign A[1][2] = matrix_a[111:96];
+    assign A[1][3] = matrix_a[127:112];
+    assign A[2][0] = matrix_a[143:128];
+    assign A[2][1] = matrix_a[159:144];
+    assign A[2][2] = matrix_a[175:160];
+    assign A[2][3] = matrix_a[191:176];
+    assign A[3][0] = matrix_a[207:192];
+    assign A[3][1] = matrix_a[223:208];
+    assign A[3][2] = matrix_a[239:224];
+    assign A[3][3] = matrix_a[255:240];
     
+    // Vector v (editable initial vector) - editable with sw1=1
+    wire signed [15:0] v [0:3];
+    assign v[0] = vector_v[15:0];
+    assign v[1] = vector_v[31:16];
+    assign v[2] = vector_v[47:32];
+    assign v[3] = vector_v[63:48];
+    
+    // v_old (previous iteration - for bar chart)
+    wire signed [15:0] vo [0:3];
+    assign vo[0] = v_old[15:0];
+    assign vo[1] = v_old[31:16];
+    assign vo[2] = v_old[47:32];
+    assign vo[3] = v_old[63:48];
+    
+    // v_new (current iteration result - for bar chart and display)
+    wire signed [15:0] vn [0:3];
+    assign vn[0] = v_new[15:0];
+    assign vn[1] = v_new[31:16];
+    assign vn[2] = v_new[47:32];
+    assign vn[3] = v_new[63:48];
+    
+    // FSM state
+    localparam IDLE = 7'b0000001;
+    // Edit mode: sw0=0 means we're in edit mode
+    wire state_edit = (sw0 == 1'b0);
+
+    // ========================================================================
+    // REGION DETECTION
+    // ========================================================================
+    wire in_vec_v_region = (px >= VEC_V_X0) && (px < VEC_V_X1) &&
+                           (py >= VEC_V_Y0) && (py < VEC_V_Y1);
+    
+    wire in_chart_region = (px >= CHART_X0) && (px < CHART_X1) &&
+                           (py >= CHART_Y0) && (py < CHART_Y1);
+    
+    wire in_matrix_region = (px >= MATRIX_X0) && (px < MATRIX_X1) &&
+                            (py >= MATRIX_Y0) && (py < MATRIX_Y1);
+    
+    wire in_vec_new_region = (px >= VEC_NEW_X0) && (px < VEC_NEW_X1) &&
+                             (py >= VEC_NEW_Y0) && (py < VEC_NEW_Y1);
+    
+    wire in_iter_region = (px >= ITER_X0) && (px < ITER_X0 + 70) &&
+                          (py >= ITER_Y0) && (py < ITER_Y0 + 30);
+    
+    // ========================================================================
+    // EDITABLE VECTOR V REGION - Shows vector_v (what you edit with sw1=1)
+    // ========================================================================
+    wire [9:0] vec_v_local_x = px - VEC_V_X0;
+    wire [9:0] vec_v_local_y = py - VEC_V_Y0;
+    wire [1:0] vec_v_idx = vec_v_local_y / VEC_V_CELL_H;
+    wire [9:0] vec_v_cell_y = vec_v_local_y - (vec_v_idx * VEC_V_CELL_H);
+    wire vec_v_valid_idx = (vec_v_idx < 4) && (vec_v_local_y < 4 * VEC_V_CELL_H);
+    
+    // Brackets for vector v
+    wire [9:0] vec_v_width = VEC_V_X1 - VEC_V_X0;
+    wire [9:0] vec_v_height = 4 * VEC_V_CELL_H;
+    wire vec_v_left_bracket = in_vec_v_region && (vec_v_local_x < 8) && vec_v_valid_idx &&
+                              ((vec_v_local_y < 4) || (vec_v_local_y >= vec_v_height - 4) || (vec_v_local_x < 3));
+    wire vec_v_right_bracket = in_vec_v_region && (vec_v_local_x >= vec_v_width - 8) && vec_v_valid_idx &&
+                               ((vec_v_local_y < 4) || (vec_v_local_y >= vec_v_height - 4) || (vec_v_local_x >= vec_v_width - 3));
+    
+    // Get vector v value for current row (this is what you EDIT)
+    reg signed [15:0] vec_v_val;
     always @(*) begin
-        // Matrix/vector value extraction (for display in cells)
-        matrix_val = matrix_a_unpack[matrix_row][matrix_col];
-        vector_val = vector_v_unpack[vector_row];
-        
-        // Absolute values
-        matrix_abs = (matrix_val < 0) ? -matrix_val : matrix_val;
-        vector_abs = (vector_val < 0) ? -vector_val : vector_val;
-        
-        // Extract digits (ones only for simplicity in small cells)
-        matrix_ones = matrix_abs[3:0];
-        vector_ones = vector_abs[3:0];
+        case (vec_v_idx)
+            2'd0: vec_v_val = v[0];
+            2'd1: vec_v_val = v[1];
+            2'd2: vec_v_val = v[2];
+            2'd3: vec_v_val = v[3];
+        endcase
     end
     
-    // Bar graph calculations
-    wire [15:0] v_old_abs [0:3];
-    wire [15:0] v_new_abs [0:3];
-    assign v_old_abs[0] = (v_old_unpack[0] < 0) ? -v_old_unpack[0] : v_old_unpack[0];
-    assign v_old_abs[1] = (v_old_unpack[1] < 0) ? -v_old_unpack[1] : v_old_unpack[1];
-    assign v_old_abs[2] = (v_old_unpack[2] < 0) ? -v_old_unpack[2] : v_old_unpack[2];
-    assign v_old_abs[3] = (v_old_unpack[3] < 0) ? -v_old_unpack[3] : v_old_unpack[3];
-    assign v_new_abs[0] = (v_new_unpack[0] < 0) ? -v_new_unpack[0] : v_new_unpack[0];
-    assign v_new_abs[1] = (v_new_unpack[1] < 0) ? -v_new_unpack[1] : v_new_unpack[1];
-    assign v_new_abs[2] = (v_new_unpack[2] < 0) ? -v_new_unpack[2] : v_new_unpack[2];
-    assign v_new_abs[3] = (v_new_unpack[3] < 0) ? -v_new_unpack[3] : v_new_unpack[3];
+    wire vec_v_is_neg = vec_v_val[15];
+    wire [15:0] vec_v_abs = vec_v_is_neg ? -vec_v_val : vec_v_val;
+    wire [3:0] vec_v_digit = vec_v_abs % 10;
     
-    // Find max of all values for scaling
-    wire [15:0] max_old_01 = (v_old_abs[0] > v_old_abs[1]) ? v_old_abs[0] : v_old_abs[1];
-    wire [15:0] max_old_23 = (v_old_abs[2] > v_old_abs[3]) ? v_old_abs[2] : v_old_abs[3];
-    wire [15:0] max_old = (max_old_01 > max_old_23) ? max_old_01 : max_old_23;
+    // Digit rendering for vector v
+    wire [9:0] vv_dig_x = vec_v_local_x - 30;
+    wire [9:0] vv_dig_y = vec_v_cell_y - 8;
+    wire in_vv_digit_area = in_vec_v_region && vec_v_valid_idx &&
+                            (vec_v_local_x >= 30) && (vec_v_local_x < 70) &&
+                            (vec_v_cell_y >= 8) && (vec_v_cell_y < 38);
     
-    wire [15:0] max_new_01 = (v_new_abs[0] > v_new_abs[1]) ? v_new_abs[0] : v_new_abs[1];
-    wire [15:0] max_new_23 = (v_new_abs[2] > v_new_abs[3]) ? v_new_abs[2] : v_new_abs[3];
-    wire [15:0] max_new = (max_new_01 > max_new_23) ? max_new_01 : max_new_23;
+    // 7-segment for vector v
+    wire vv_seg_a = in_vv_digit_area && (vv_dig_y < 4) && (vv_dig_x >= 4) && (vv_dig_x < 32);
+    wire vv_seg_b = in_vv_digit_area && (vv_dig_x >= 32) && (vv_dig_y >= 2) && (vv_dig_y < 14);
+    wire vv_seg_c = in_vv_digit_area && (vv_dig_x >= 32) && (vv_dig_y >= 17) && (vv_dig_y < 28);
+    wire vv_seg_d = in_vv_digit_area && (vv_dig_y >= 26) && (vv_dig_x >= 4) && (vv_dig_x < 32);
+    wire vv_seg_e = in_vv_digit_area && (vv_dig_x < 4) && (vv_dig_y >= 17) && (vv_dig_y < 28);
+    wire vv_seg_f = in_vv_digit_area && (vv_dig_x < 4) && (vv_dig_y >= 2) && (vv_dig_y < 14);
+    wire vv_seg_g = in_vv_digit_area && (vv_dig_y >= 13) && (vv_dig_y < 18) && (vv_dig_x >= 4) && (vv_dig_x < 32);
     
-    wire [15:0] max_all = (max_old > max_new) ? max_old : max_new;
-    wire [15:0] scale_factor = (max_all > 0) ? max_all : 16'd1;
+    reg [6:0] vv_seg_en;
+    always @(*) begin
+        case (vec_v_digit)
+            4'd0: vv_seg_en = 7'b1111110;
+            4'd1: vv_seg_en = 7'b0110000;
+            4'd2: vv_seg_en = 7'b1101101;
+            4'd3: vv_seg_en = 7'b1111001;
+            4'd4: vv_seg_en = 7'b0110011;
+            4'd5: vv_seg_en = 7'b1011011;
+            4'd6: vv_seg_en = 7'b1011111;
+            4'd7: vv_seg_en = 7'b1110000;
+            4'd8: vv_seg_en = 7'b1111111;
+            4'd9: vv_seg_en = 7'b1111011;
+            default: vv_seg_en = 7'b0000000;
+        endcase
+    end
     
-    // Bar heights (scaled to GRAPH_HEIGHT - 20 for labels)
-    wire [9:0] bar_max_height = GRAPH_HEIGHT - 20;
-    wire [9:0] bar_old_height [0:3];
-    wire [9:0] bar_new_height [0:3];
+    wire vv_digit_pixel = (vv_seg_en[6] && vv_seg_a) || (vv_seg_en[5] && vv_seg_b) ||
+                          (vv_seg_en[4] && vv_seg_c) || (vv_seg_en[3] && vv_seg_d) ||
+                          (vv_seg_en[2] && vv_seg_e) || (vv_seg_en[1] && vv_seg_f) ||
+                          (vv_seg_en[0] && vv_seg_g);
     
-    // Simple scaling: multiply by max_height and divide by scale_factor
-    // Use right-shift for division (scale_factor >> N to get approximate division)
-    wire [5:0] shift_amount;
-    assign shift_amount = (scale_factor > 32768) ? 6'd15 :
-                         (scale_factor > 16384) ? 6'd14 :
-                         (scale_factor > 8192) ? 6'd13 :
-                         (scale_factor > 4096) ? 6'd12 :
-                         (scale_factor > 2048) ? 6'd11 :
-                         (scale_factor > 1024) ? 6'd10 :
-                         (scale_factor > 512) ? 6'd9 :
-                         (scale_factor > 256) ? 6'd8 :
-                         (scale_factor > 128) ? 6'd7 :
-                         (scale_factor > 64) ? 6'd6 :
-                         (scale_factor > 32) ? 6'd5 :
-                         (scale_factor > 16) ? 6'd4 :
-                         (scale_factor > 8) ? 6'd3 :
-                         (scale_factor > 4) ? 6'd2 :
-                         (scale_factor > 2) ? 6'd1 : 6'd0;
+    wire vv_neg_sign = in_vv_digit_area && vec_v_is_neg && 
+                       (vv_dig_x >= 0) && (vv_dig_x < 10) && (vv_dig_y >= 12) && (vv_dig_y < 17);
     
-    assign bar_old_height[0] = (v_old_abs[0] >> shift_amount) > bar_max_height ? bar_max_height : (v_old_abs[0] >> shift_amount);
-    assign bar_old_height[1] = (v_old_abs[1] >> shift_amount) > bar_max_height ? bar_max_height : (v_old_abs[1] >> shift_amount);
-    assign bar_old_height[2] = (v_old_abs[2] >> shift_amount) > bar_max_height ? bar_max_height : (v_old_abs[2] >> shift_amount);
-    assign bar_old_height[3] = (v_old_abs[3] >> shift_amount) > bar_max_height ? bar_max_height : (v_old_abs[3] >> shift_amount);
+    // Cursor for vector v (only in edit mode when sw1=1)
+    wire vec_v_cursor = state_edit && (sw1 == 1'b1) && (vec_v_idx == edit_row) && vec_v_valid_idx;
+    wire vec_v_cursor_border = vec_v_cursor && in_vec_v_region &&
+                               ((vec_v_cell_y < 5) || (vec_v_cell_y >= VEC_V_CELL_H - 5) ||
+                                (vec_v_local_x < 13) || (vec_v_local_x >= vec_v_width - 13));
+
+    // ========================================================================
+    // CHART REGION - Bar charts for v_old and v_new (computation progress)
+    // ========================================================================
+    wire [9:0] chart_local_x = px - CHART_X0;
+    wire [9:0] chart_local_y = py - CHART_Y0;
+    wire [9:0] chart_width = CHART_X1 - CHART_X0;
+    wire [9:0] chart_height = CHART_Y1 - CHART_Y0;
+    wire [9:0] bar_bottom = chart_height - 15;
     
-    assign bar_new_height[0] = (v_new_abs[0] >> shift_amount) > bar_max_height ? bar_max_height : (v_new_abs[0] >> shift_amount);
-    assign bar_new_height[1] = (v_new_abs[1] >> shift_amount) > bar_max_height ? bar_max_height : (v_new_abs[1] >> shift_amount);
-    assign bar_new_height[2] = (v_new_abs[2] >> shift_amount) > bar_max_height ? bar_max_height : (v_new_abs[2] >> shift_amount);
-    assign bar_new_height[3] = (v_new_abs[3] >> shift_amount) > bar_max_height ? bar_max_height : (v_new_abs[3] >> shift_amount);
+    // Split chart: left half = v_old bars, right half = v_new bars
+    wire [9:0] half_width = chart_width / 2;
+    wire in_left_chart = in_chart_region && (chart_local_x < half_width);
+    wire in_right_chart = in_chart_region && (chart_local_x >= half_width);
     
     // Bar positions
-    wire [9:0] bar_x_old [0:3];
-    wire [9:0] bar_x_new [0:3];
-    assign bar_x_old[0] = GRAPH_X + 10;
-    assign bar_x_old[1] = GRAPH_X + 10 + (BAR_WIDTH + BAR_SPACING);
-    assign bar_x_old[2] = GRAPH_X + 10 + 2*(BAR_WIDTH + BAR_SPACING);
-    assign bar_x_old[3] = GRAPH_X + 10 + 3*(BAR_WIDTH + BAR_SPACING);
-    assign bar_x_new[0] = GRAPH_X + 10 + 4*(BAR_WIDTH + BAR_SPACING);
-    assign bar_x_new[1] = GRAPH_X + 10 + 5*(BAR_WIDTH + BAR_SPACING);
-    assign bar_x_new[2] = GRAPH_X + 10 + 6*(BAR_WIDTH + BAR_SPACING);
-    assign bar_x_new[3] = GRAPH_X + 10 + 7*(BAR_WIDTH + BAR_SPACING);
+    wire [9:0] left_bar_base_x = 25;
+    wire [9:0] right_bar_base_x = half_width + 25;
     
-    wire [9:0] bar_bottom = GRAPH_Y + GRAPH_HEIGHT - 20;
+    wire [9:0] left_bar_offset = chart_local_x - left_bar_base_x;
+    wire [9:0] right_bar_offset = chart_local_x - right_bar_base_x;
+    wire [2:0] left_bar_idx = left_bar_offset / (BAR_WIDTH + BAR_SPACING);
+    wire [2:0] right_bar_idx = right_bar_offset / (BAR_WIDTH + BAR_SPACING);
+    wire [9:0] left_bar_local_x = left_bar_offset - (left_bar_idx * (BAR_WIDTH + BAR_SPACING));
+    wire [9:0] right_bar_local_x = right_bar_offset - (right_bar_idx * (BAR_WIDTH + BAR_SPACING));
     
-    // Bar drawing
-    wire in_bar_old [0:3];
-    wire in_bar_new [0:3];
-    assign in_bar_old[0] = (px >= bar_x_old[0]) && (px < bar_x_old[0] + BAR_WIDTH) &&
-                           (py >= bar_bottom - bar_old_height[0]) && (py < bar_bottom);
-    assign in_bar_old[1] = (px >= bar_x_old[1]) && (px < bar_x_old[1] + BAR_WIDTH) &&
-                           (py >= bar_bottom - bar_old_height[1]) && (py < bar_bottom);
-    assign in_bar_old[2] = (px >= bar_x_old[2]) && (px < bar_x_old[2] + BAR_WIDTH) &&
-                           (py >= bar_bottom - bar_old_height[2]) && (py < bar_bottom);
-    assign in_bar_old[3] = (px >= bar_x_old[3]) && (px < bar_x_old[3] + BAR_WIDTH) &&
-                           (py >= bar_bottom - bar_old_height[3]) && (py < bar_bottom);
-    assign in_bar_new[0] = (px >= bar_x_new[0]) && (px < bar_x_new[0] + BAR_WIDTH) &&
-                           (py >= bar_bottom - bar_new_height[0]) && (py < bar_bottom);
-    assign in_bar_new[1] = (px >= bar_x_new[1]) && (px < bar_x_new[1] + BAR_WIDTH) &&
-                           (py >= bar_bottom - bar_new_height[1]) && (py < bar_bottom);
-    assign in_bar_new[2] = (px >= bar_x_new[2]) && (px < bar_x_new[2] + BAR_WIDTH) &&
-                           (py >= bar_bottom - bar_new_height[2]) && (py < bar_bottom);
-    assign in_bar_new[3] = (px >= bar_x_new[3]) && (px < bar_x_new[3] + BAR_WIDTH) &&
-                           (py >= bar_bottom - bar_new_height[3]) && (py < bar_bottom);
+    // Get bar heights (absolute values, scaled)
+    wire [15:0] vo_abs [0:3];
+    wire [15:0] vn_abs [0:3];
+    assign vo_abs[0] = vo[0][15] ? -vo[0] : vo[0];
+    assign vo_abs[1] = vo[1][15] ? -vo[1] : vo[1];
+    assign vo_abs[2] = vo[2][15] ? -vo[2] : vo[2];
+    assign vo_abs[3] = vo[3][15] ? -vo[3] : vo[3];
+    assign vn_abs[0] = vn[0][15] ? -vn[0] : vn[0];
+    assign vn_abs[1] = vn[1][15] ? -vn[1] : vn[1];
+    assign vn_abs[2] = vn[2][15] ? -vn[2] : vn[2];
+    assign vn_abs[3] = vn[3][15] ? -vn[3] : vn[3];
     
-    wire in_any_bar = in_bar_old[0] || in_bar_old[1] || in_bar_old[2] || in_bar_old[3] ||
-                      in_bar_new[0] || in_bar_new[1] || in_bar_new[2] || in_bar_new[3];
+    // Scale bars (divide by 2, max BAR_MAX_HEIGHT)
+    wire [9:0] vo_bar_h [0:3];
+    wire [9:0] vn_bar_h [0:3];
+    assign vo_bar_h[0] = (vo_abs[0] > 320) ? BAR_MAX_HEIGHT : vo_abs[0][8:1];
+    assign vo_bar_h[1] = (vo_abs[1] > 320) ? BAR_MAX_HEIGHT : vo_abs[1][8:1];
+    assign vo_bar_h[2] = (vo_abs[2] > 320) ? BAR_MAX_HEIGHT : vo_abs[2][8:1];
+    assign vo_bar_h[3] = (vo_abs[3] > 320) ? BAR_MAX_HEIGHT : vo_abs[3][8:1];
+    assign vn_bar_h[0] = (vn_abs[0] > 320) ? BAR_MAX_HEIGHT : vn_abs[0][8:1];
+    assign vn_bar_h[1] = (vn_abs[1] > 320) ? BAR_MAX_HEIGHT : vn_abs[1][8:1];
+    assign vn_bar_h[2] = (vn_abs[2] > 320) ? BAR_MAX_HEIGHT : vn_abs[2][8:1];
+    assign vn_bar_h[3] = (vn_abs[3] > 320) ? BAR_MAX_HEIGHT : vn_abs[3][8:1];
     
-    // Extract digits from iteration_count
-    wire [3:0] iter_hundreds = (iteration_count >= 200) ? 4'd2 :
-                               (iteration_count >= 100) ? 4'd1 : 4'd0;
-    wire [7:0] iter_rem_h = iteration_count - (iter_hundreds * 100);
-    wire [3:0] iter_tens = (iter_rem_h >= 90) ? 4'd9 :
-                           (iter_rem_h >= 80) ? 4'd8 :
-                           (iter_rem_h >= 70) ? 4'd7 :
-                           (iter_rem_h >= 60) ? 4'd6 :
-                           (iter_rem_h >= 50) ? 4'd5 :
-                           (iter_rem_h >= 40) ? 4'd4 :
-                           (iter_rem_h >= 30) ? 4'd3 :
-                           (iter_rem_h >= 20) ? 4'd2 :
-                           (iter_rem_h >= 10) ? 4'd1 : 4'd0;
-    wire [3:0] iter_ones = iter_rem_h - (iter_tens * 10);
-    
-    // Extract epsilon value
-    wire [3:0] eps_val = {1'b0, sw_eps};
-    
-    // Character rendering helper (8x8 grid)
-    function [7:0] char_line;
-        input [3:0] char_code;
-        input [2:0] line;
-        begin
-            case (char_code)
-                4'd0: begin // '0'
-                    case (line)
-                        3'd0: char_line = 8'b01111110;
-                        3'd1: char_line = 8'b11100111;
-                        3'd2: char_line = 8'b11101111;
-                        3'd3: char_line = 8'b11110111;
-                        3'd4: char_line = 8'b11111011;
-                        3'd5: char_line = 8'b11111101;
-                        3'd6: char_line = 8'b11100111;
-                        3'd7: char_line = 8'b01111110;
-                        default: char_line = 8'b00000000;
-                    endcase
-                end
-                4'd1: begin // '1'
-                    case (line)
-                        3'd0: char_line = 8'b00011000;
-                        3'd1: char_line = 8'b00111000;
-                        3'd2: char_line = 8'b01111000;
-                        3'd3: char_line = 8'b00011000;
-                        3'd4: char_line = 8'b00011000;
-                        3'd5: char_line = 8'b00011000;
-                        3'd6: char_line = 8'b00011000;
-                        3'd7: char_line = 8'b01111110;
-                        default: char_line = 8'b00000000;
-                    endcase
-                end
-                4'd2: begin // '2'
-                    case (line)
-                        3'd0: char_line = 8'b01111110;
-                        3'd1: char_line = 8'b11100111;
-                        3'd2: char_line = 8'b00000111;
-                        3'd3: char_line = 8'b01111110;
-                        3'd4: char_line = 8'b11100000;
-                        3'd5: char_line = 8'b11111111;
-                        3'd6: char_line = 8'b11111111;
-                        3'd7: char_line = 8'b01111110;
-                        default: char_line = 8'b00000000;
-                    endcase
-                end
-                4'd3: begin // '3'
-                    case (line)
-                        3'd0: char_line = 8'b01111110;
-                        3'd1: char_line = 8'b11100111;
-                        3'd2: char_line = 8'b00000111;
-                        3'd3: char_line = 8'b00111110;
-                        3'd4: char_line = 8'b00000111;
-                        3'd5: char_line = 8'b11100111;
-                        3'd6: char_line = 8'b11100111;
-                        3'd7: char_line = 8'b01111110;
-                        default: char_line = 8'b00000000;
-                    endcase
-                end
-                4'd4: begin // '4'
-                    case (line)
-                        3'd0: char_line = 8'b11100111;
-                        3'd1: char_line = 8'b11100111;
-                        3'd2: char_line = 8'b11100111;
-                        3'd3: char_line = 8'b11111111;
-                        3'd4: char_line = 8'b00000111;
-                        3'd5: char_line = 8'b00000111;
-                        3'd6: char_line = 8'b00000111;
-                        3'd7: char_line = 8'b00000111;
-                        default: char_line = 8'b00000000;
-                    endcase
-                end
-                4'd5: begin // '5'
-                    case (line)
-                        3'd0: char_line = 8'b11111111;
-                        3'd1: char_line = 8'b11100000;
-                        3'd2: char_line = 8'b11100000;
-                        3'd3: char_line = 8'b11111110;
-                        3'd4: char_line = 8'b00000111;
-                        3'd5: char_line = 8'b11100111;
-                        3'd6: char_line = 8'b11100111;
-                        3'd7: char_line = 8'b01111110;
-                        default: char_line = 8'b00000000;
-                    endcase
-                end
-                4'd6: begin // '6'
-                    case (line)
-                        3'd0: char_line = 8'b01111110;
-                        3'd1: char_line = 8'b11100111;
-                        3'd2: char_line = 8'b11100000;
-                        3'd3: char_line = 8'b11111110;
-                        3'd4: char_line = 8'b11100111;
-                        3'd5: char_line = 8'b11100111;
-                        3'd6: char_line = 8'b11100111;
-                        3'd7: char_line = 8'b01111110;
-                        default: char_line = 8'b00000000;
-                    endcase
-                end
-                4'd7: begin // '7'
-                    case (line)
-                        3'd0: char_line = 8'b11111111;
-                        3'd1: char_line = 8'b00000111;
-                        3'd2: char_line = 8'b00001110;
-                        3'd3: char_line = 8'b00011100;
-                        3'd4: char_line = 8'b00111000;
-                        3'd5: char_line = 8'b01110000;
-                        3'd6: char_line = 8'b11100000;
-                        3'd7: char_line = 8'b11100000;
-                        default: char_line = 8'b00000000;
-                    endcase
-                end
-                4'd8: begin // '8'
-                    case (line)
-                        3'd0: char_line = 8'b01111110;
-                        3'd1: char_line = 8'b11100111;
-                        3'd2: char_line = 8'b11100111;
-                        3'd3: char_line = 8'b01111110;
-                        3'd4: char_line = 8'b11100111;
-                        3'd5: char_line = 8'b11100111;
-                        3'd6: char_line = 8'b11100111;
-                        3'd7: char_line = 8'b01111110;
-                        default: char_line = 8'b00000000;
-                    endcase
-                end
-                4'd9: begin // '9'
-                    case (line)
-                        3'd0: char_line = 8'b01111110;
-                        3'd1: char_line = 8'b11100111;
-                        3'd2: char_line = 8'b11100111;
-                        3'd3: char_line = 8'b11100111;
-                        3'd4: char_line = 8'b01111111;
-                        3'd5: char_line = 8'b00000111;
-                        3'd6: char_line = 8'b11100111;
-                        3'd7: char_line = 8'b01111110;
-                        default: char_line = 8'b00000000;
-                    endcase
-                end
-                default: char_line = 8'b00000000;
-            endcase
-        end
-    endfunction
-    
-    // Render character at position - compute one pixel at a time
-    function pixel_in_char;
-        input [9:0] char_x, char_y;
-        input [3:0] char_code;
-        input [9:0] px, py;
-        reg [2:0] char_line_idx;
-        reg [2:0] char_col_idx;
-        reg [7:0] char_line_result;
-        begin
-            if ((px >= char_x) && (px < char_x + 8) && (py >= char_y) && (py < char_y + 8)) begin
-                char_line_idx = py - char_y;
-                char_col_idx = px - char_x;
-                char_line_result = char_line(char_code, char_line_idx);
-                pixel_in_char = char_line_result[7 - char_col_idx];
-            end else begin
-                pixel_in_char = 1'b0;
-            end
-        end
-    endfunction
-    
-    // ========================================================================
-    // BLOCK 2: Precompute all pixel_in_char calls for text rendering
-    // ========================================================================
-    // State character pixels
-    reg banner_char_0, banner_char_1, banner_char_2, banner_char_3;
-    reg banner_char_4, banner_char_5, banner_char_6, banner_char_7;
-    reg banner_char_8, banner_char_9, banner_char_10, banner_char_11;
-    reg banner_char_12, banner_char_13, banner_char_14, banner_char_15;
-    reg banner_char_16, banner_char_17, banner_char_18, banner_char_19;
-    
-    // Iteration count pixels
-    reg banner_char_i, banner_char_t, banner_char_e, banner_char_r, banner_char_colon;
-    reg banner_char_iter_tens, banner_char_iter_ones;
-    
-    // Epsilon pixels
-    reg banner_char_eps_e, banner_char_eps_p, banner_char_eps_s, banner_char_eps_eq, banner_char_eps_val;
-    
-    // Done message pixels
-    reg done_char_0, done_char_1, done_char_2, done_char_3, done_char_4;
-    reg done_char_5, done_char_6, done_char_7, done_char_8, done_char_9;
-    reg done_char_10, done_char_11, done_char_12, done_char_13;
-    
-    // Final vector pixels
-    reg final_vec_char_0, final_vec_char_1, final_vec_char_2, final_vec_char_3;
-    reg [3:0] v_new_digit_0, v_new_digit_1, v_new_digit_2, v_new_digit_3;
-    
-    // Label pixels
-    reg matrix_row_label_pix, matrix_col_label_pix;
-    reg [1:0] label_row_idx, label_col_idx;
-    reg in_matrix_label_row, in_matrix_label_col;
-    
+    // Check if pixel is in a v_old bar
+    reg in_vo_bar;
     always @(*) begin
-        // State name characters
-        banner_char_0 = pixel_in_char(10, 5, (state_edit ? 4'd4 : (state_running ? 4'd7 : 4'd3)), px, py);
-        banner_char_1 = pixel_in_char(18, 5, (state_edit ? 4'd3 : (state_running ? 4'd2 : 4'd0)), px, py);
-        banner_char_2 = pixel_in_char(26, 5, (state_edit ? 4'd8 : (state_running ? 4'd0 : 4'd3)), px, py);
-        banner_char_3 = pixel_in_char(34, 5, (state_edit ? 4'd9 : (state_running ? 4'd7 : 4'd4)), px, py);
-        banner_char_4 = state_running ? pixel_in_char(42, 5, 4'd7, px, py) : 1'b0;
-        banner_char_5 = state_running ? pixel_in_char(50, 5, 4'd6, px, py) : 1'b0;
-        banner_char_6 = state_done ? pixel_in_char(42, 5, 4'd3, px, py) : 1'b0;
-        banner_char_7 = state_done ? pixel_in_char(50, 5, 4'd0, px, py) : 1'b0;
-        banner_char_8 = state_done ? pixel_in_char(58, 5, 4'd3, px, py) : 1'b0;
-        banner_char_9 = state_done ? pixel_in_char(66, 5, 4'd4, px, py) : 1'b0;
-        
-        // Iteration count
-        banner_char_i = pixel_in_char(100, 5, 4'd8, px, py);
-        banner_char_t = pixel_in_char(108, 5, 4'd9, px, py);
-        banner_char_e = pixel_in_char(116, 5, 4'd4, px, py);
-        banner_char_r = pixel_in_char(124, 5, 4'd7, px, py);
-        banner_char_colon = pixel_in_char(132, 5, 4'd0, px, py);
-        banner_char_iter_tens = pixel_in_char(140, 5, iter_tens, px, py);
-        banner_char_iter_ones = pixel_in_char(148, 5, iter_ones, px, py);
-        
-        // Epsilon
-        banner_char_eps_e = pixel_in_char(200, 5, 4'd4, px, py);
-        banner_char_eps_p = pixel_in_char(208, 5, 4'd7, px, py);
-        banner_char_eps_s = pixel_in_char(216, 5, 4'd8, px, py);
-        banner_char_eps_eq = pixel_in_char(224, 5, 4'd0, px, py);
-        banner_char_eps_val = pixel_in_char(232, 5, eps_val, px, py);
-        
-        // Done message
-        done_char_0 = pixel_in_char(250, 200, 4'd3, px, py);
-        done_char_1 = pixel_in_char(258, 200, 4'd0, px, py);
-        done_char_2 = pixel_in_char(266, 200, 4'd3, px, py);
-        done_char_3 = pixel_in_char(274, 200, 4'd4, px, py);
-        done_char_4 = pixel_in_char(290, 200, 4'd0, px, py);
-        done_char_5 = pixel_in_char(298, 200, 4'd4, px, py);
-        done_char_6 = pixel_in_char(306, 200, 4'd8, px, py);
-        done_char_7 = pixel_in_char(314, 200, 4'd4, px, py);
-        done_char_8 = pixel_in_char(322, 200, 4'd6, px, py);
-        done_char_9 = pixel_in_char(330, 200, 4'd4, px, py);
-        done_char_10 = pixel_in_char(338, 200, 4'd3, px, py);
-        done_char_11 = pixel_in_char(346, 200, 4'd7, px, py);
-        done_char_12 = pixel_in_char(354, 200, 4'd4, px, py);
-        done_char_13 = pixel_in_char(362, 200, 4'd7, px, py);
-        
-        // Final vector
-        v_new_digit_0 = v_new_unpack[0][3:0];
-        v_new_digit_1 = v_new_unpack[1][3:0];
-        v_new_digit_2 = v_new_unpack[2][3:0];
-        v_new_digit_3 = v_new_unpack[3][3:0];
-        final_vec_char_0 = pixel_in_char(250 + 0*16, 260, v_new_digit_0, px, py);
-        final_vec_char_1 = pixel_in_char(250 + 1*16, 260, v_new_digit_1, px, py);
-        final_vec_char_2 = pixel_in_char(250 + 2*16, 260, v_new_digit_2, px, py);
-        final_vec_char_3 = pixel_in_char(250 + 3*16, 260, v_new_digit_3, px, py);
-        
-        // Matrix labels
-        label_row_idx = (py - MATRIX_Y) / CELL_SIZE;
-        label_col_idx = (px - MATRIX_X) / CELL_SIZE;
-        in_matrix_label_row = (px >= MATRIX_X - 15) && (px < MATRIX_X) &&
-                              (py >= MATRIX_Y) && (py < MATRIX_Y + 4*CELL_SIZE);
-        in_matrix_label_col = (px >= MATRIX_X) && (px < MATRIX_X + 4*CELL_SIZE) &&
-                              (py >= MATRIX_Y - 15) && (py < MATRIX_Y);
-        matrix_row_label_pix = in_matrix_label_row && pixel_in_char(MATRIX_X - 12, MATRIX_Y + label_row_idx * CELL_SIZE + 10, {2'b0, label_row_idx}, px, py);
-        matrix_col_label_pix = in_matrix_label_col && pixel_in_char(MATRIX_X + label_col_idx * CELL_SIZE + 10, MATRIX_Y - 12, {2'b0, label_col_idx}, px, py);
+        in_vo_bar = 1'b0;
+        if (in_left_chart && (left_bar_local_x < BAR_WIDTH) && (left_bar_idx < 4)) begin
+            case (left_bar_idx[1:0])
+                2'd0: in_vo_bar = (chart_local_y >= bar_bottom - vo_bar_h[0]) && (chart_local_y < bar_bottom);
+                2'd1: in_vo_bar = (chart_local_y >= bar_bottom - vo_bar_h[1]) && (chart_local_y < bar_bottom);
+                2'd2: in_vo_bar = (chart_local_y >= bar_bottom - vo_bar_h[2]) && (chart_local_y < bar_bottom);
+                2'd3: in_vo_bar = (chart_local_y >= bar_bottom - vo_bar_h[3]) && (chart_local_y < bar_bottom);
+                    endcase
+                end
     end
     
-    // Combine banner text pixels
-    wire banner_text = banner_char_0 || banner_char_1 || banner_char_2 || banner_char_3 ||
-                      banner_char_4 || banner_char_5 || banner_char_6 || banner_char_7 ||
-                      banner_char_8 || banner_char_9 ||
-                      banner_char_i || banner_char_t || banner_char_e || banner_char_r ||
-                      banner_char_colon || banner_char_iter_tens || banner_char_iter_ones ||
-                      banner_char_eps_e || banner_char_eps_p || banner_char_eps_s ||
-                      banner_char_eps_eq || banner_char_eps_val;
-    
-    // Combine done text pixels
-    wire in_done_msg = (px >= 250) && (px < 400) && (py >= 200) && (py < 250) && state_done;
-    wire done_text = in_done_msg && (done_char_0 || done_char_1 || done_char_2 || done_char_3 ||
-                                     done_char_4 || done_char_5 || done_char_6 || done_char_7 ||
-                                     done_char_8 || done_char_9 || done_char_10 || done_char_11 ||
-                                     done_char_12 || done_char_13);
-    
-    // Combine final vector text pixels
-    wire in_final_vec = (px >= 250) && (px < 400) && (py >= 260) && (py < 320) && state_done;
-    wire final_vec_text = in_final_vec && (final_vec_char_0 || final_vec_char_1 || final_vec_char_2 || final_vec_char_3);
-    
-    // Matrix cell borders and labels
-    wire matrix_border = in_matrix && (
-                         (matrix_cell_x < 1) || (matrix_cell_x >= CELL_SIZE - 1) ||
-                         (matrix_cell_y < 1) || (matrix_cell_y >= CELL_SIZE - 1));
-    
-    // Vector cell borders
-    wire vector_border = in_vector && (
-                         (vector_cell_x < 1) || (vector_cell_x >= CELL_SIZE - 1) ||
-                         (vector_cell_y < 1) || (vector_cell_y >= CELL_SIZE - 1));
-    
-    // ========================================================================
-    // BLOCK 3: Compute digit pixel signals
-    // ========================================================================
-    wire matrix_digit_pixel, vector_digit_pixel;
-    block_digit_renderer #(.DIGIT_WIDTH(20), .DIGIT_HEIGHT(30)) matrix_digit (
-        .digit(matrix_ones),
-        .px(px),
-        .py(py),
-        .base_x(MATRIX_X + matrix_col * CELL_SIZE + 10),
-        .base_y(MATRIX_Y + matrix_row * CELL_SIZE + 5),
-        .pixel_on(matrix_digit_pixel)
-    );
-    
-    block_digit_renderer #(.DIGIT_WIDTH(20), .DIGIT_HEIGHT(30)) vector_digit (
-        .digit(vector_ones),
-        .px(px),
-        .py(py),
-        .base_x(VECTOR_X + 10),
-        .base_y(VECTOR_Y + vector_row * CELL_SIZE + 5),
-        .pixel_on(vector_digit_pixel)
-    );
-    
-    // Negative sign rendering (simple horizontal line)
-    wire matrix_neg_sign = in_matrix && (matrix_val < 0) &&
-                           (matrix_cell_x >= 5) && (matrix_cell_x < 8) &&
-                           (matrix_cell_y >= 15) && (matrix_cell_y < 17);
-    wire vector_neg_sign = in_vector && (vector_val < 0) &&
-                          (vector_cell_x >= 5) && (vector_cell_x < 8) &&
-                          (vector_cell_y >= 15) && (vector_cell_y < 17);
-    
-    // ========================================================================
-    // BLOCK 4: Simple RGB assignment using only precomputed wires
-    // ========================================================================
+    // Check if pixel is in a v_new bar
+    reg in_vn_bar;
     always @(*) begin
-        if (!visible) begin
-            red = 4'b0000;
-            green = 4'b0000;
-            blue = 4'b0000;
-        end else if (in_banner) begin
-            // Banner: white text on black
-            if (banner_text) begin
-                red = 4'b1111;
-                green = 4'b1111;
-                blue = 4'b1111;
-            end else begin
-                red = 4'b0000;
-                green = 4'b0000;
-                blue = 4'b0000;
-            end
-        end else if (cursor_border) begin
-            // Cursor: yellow/red border
-            red = 4'b1111;
-            green = 4'b1111;
-            blue = 4'b0000;
-        end else if (matrix_border || vector_border || matrix_row_label_pix || matrix_col_label_pix) begin
-            // Borders and labels: white
-            red = 4'b1111;
-            green = 4'b1111;
-            blue = 4'b1111;
-        end else if (in_matrix && (matrix_digit_pixel || matrix_neg_sign)) begin
-            // Matrix digits: white
-            red = 4'b1111;
-            green = 4'b1111;
-            blue = 4'b1111;
-        end else if (in_vector && (vector_digit_pixel || vector_neg_sign)) begin
-            // Vector digits: white
-            red = 4'b1111;
-            green = 4'b1111;
-            blue = 4'b1111;
-        end else if (in_any_bar) begin
-            // Bar graph: green
-            red = 4'b0000;
-            green = 4'b1111;
-            blue = 4'b0000;
-        end else if (done_text || final_vec_text) begin
-            // DONE message: white
-            red = 4'b1111;
-            green = 4'b1111;
-            blue = 4'b1111;
-        end else begin
-            // Background: black
-            red = 4'b0000;
-            green = 4'b0000;
-            blue = 4'b0000;
+        in_vn_bar = 1'b0;
+        if (in_right_chart && (right_bar_local_x < BAR_WIDTH) && (right_bar_idx < 4)) begin
+            case (right_bar_idx[1:0])
+                2'd0: in_vn_bar = (chart_local_y >= bar_bottom - vn_bar_h[0]) && (chart_local_y < bar_bottom);
+                2'd1: in_vn_bar = (chart_local_y >= bar_bottom - vn_bar_h[1]) && (chart_local_y < bar_bottom);
+                2'd2: in_vn_bar = (chart_local_y >= bar_bottom - vn_bar_h[2]) && (chart_local_y < bar_bottom);
+                2'd3: in_vn_bar = (chart_local_y >= bar_bottom - vn_bar_h[3]) && (chart_local_y < bar_bottom);
+                    endcase
+                end
+    end
+    
+    // Chart structure
+    wire chart_border = in_chart_region && 
+                        ((chart_local_x < 2) || (chart_local_x >= chart_width - 2) ||
+                         (chart_local_y < 2) || (chart_local_y >= chart_height - 2));
+    wire chart_divider = in_chart_region && (chart_local_x >= half_width - 1) && (chart_local_x < half_width + 1);
+    wire chart_baseline = in_chart_region && (chart_local_y >= bar_bottom) && (chart_local_y < bar_bottom + 2);
+
+    // ========================================================================
+    // MATRIX REGION - 4x4 matrix with brackets (edit with sw1=0)
+    // ========================================================================
+    wire [9:0] mat_local_x = px - MATRIX_X0;
+    wire [9:0] mat_local_y = py - MATRIX_Y0;
+    wire [9:0] mat_width = MATRIX_X1 - MATRIX_X0;
+    wire [9:0] mat_height = MATRIX_Y1 - MATRIX_Y0;
+    
+    // Matrix grid area (inside brackets)
+    parameter MAT_BRACKET_W = 10;
+    wire [9:0] mat_grid_x0 = MAT_BRACKET_W;
+    wire [9:0] mat_grid_y0 = 20;
+    wire [9:0] mat_grid_w = 4 * MATRIX_CELL_SIZE;
+    wire [9:0] mat_grid_h = 4 * MATRIX_CELL_SIZE;
+    
+    wire in_mat_grid = in_matrix_region && 
+                       (mat_local_x >= mat_grid_x0) && (mat_local_x < mat_grid_x0 + mat_grid_w) &&
+                       (mat_local_y >= mat_grid_y0) && (mat_local_y < mat_grid_y0 + mat_grid_h);
+    
+    // Matrix cell position
+    wire [9:0] mat_grid_rel_x = mat_local_x - mat_grid_x0;
+    wire [9:0] mat_grid_rel_y = mat_local_y - mat_grid_y0;
+    wire [1:0] mat_row = mat_grid_rel_y / MATRIX_CELL_SIZE;
+    wire [1:0] mat_col = mat_grid_rel_x / MATRIX_CELL_SIZE;
+    wire [9:0] mat_cell_x = mat_grid_rel_x - (mat_col * MATRIX_CELL_SIZE);
+    wire [9:0] mat_cell_y = mat_grid_rel_y - (mat_row * MATRIX_CELL_SIZE);
+    
+    // Matrix brackets
+    wire mat_left_bracket = in_matrix_region && (mat_local_x < MAT_BRACKET_W) &&
+                            (mat_local_y >= mat_grid_y0) && (mat_local_y < mat_grid_y0 + mat_grid_h) &&
+                            ((mat_local_y < mat_grid_y0 + 4) || 
+                             (mat_local_y >= mat_grid_y0 + mat_grid_h - 4) || 
+                             (mat_local_x < 3));
+    wire mat_right_bracket = in_matrix_region && (mat_local_x >= mat_grid_x0 + mat_grid_w) &&
+                             (mat_local_y >= mat_grid_y0) && (mat_local_y < mat_grid_y0 + mat_grid_h) &&
+                             ((mat_local_y < mat_grid_y0 + 4) || 
+                              (mat_local_y >= mat_grid_y0 + mat_grid_h - 4) || 
+                              (mat_local_x >= mat_grid_x0 + mat_grid_w + MAT_BRACKET_W - 3));
+    
+    // Get matrix value
+    reg signed [15:0] mat_val;
+    always @(*) begin
+        case ({mat_row, mat_col})
+            4'b0000: mat_val = A[0][0];
+            4'b0001: mat_val = A[0][1];
+            4'b0010: mat_val = A[0][2];
+            4'b0011: mat_val = A[0][3];
+            4'b0100: mat_val = A[1][0];
+            4'b0101: mat_val = A[1][1];
+            4'b0110: mat_val = A[1][2];
+            4'b0111: mat_val = A[1][3];
+            4'b1000: mat_val = A[2][0];
+            4'b1001: mat_val = A[2][1];
+            4'b1010: mat_val = A[2][2];
+            4'b1011: mat_val = A[2][3];
+            4'b1100: mat_val = A[3][0];
+            4'b1101: mat_val = A[3][1];
+            4'b1110: mat_val = A[3][2];
+            4'b1111: mat_val = A[3][3];
+                    endcase
+                end
+    
+    wire mat_is_neg = mat_val[15];
+    wire [15:0] mat_abs = mat_is_neg ? -mat_val : mat_val;
+    wire [3:0] mat_digit = mat_abs % 10;
+    
+    // Matrix digit area (centered in cell)
+    wire [9:0] mat_dig_x = mat_cell_x - 10;
+    wire [9:0] mat_dig_y = mat_cell_y - 8;
+    wire in_mat_digit_area = in_mat_grid && (mat_cell_x >= 10) && (mat_cell_x < 35) &&
+                             (mat_cell_y >= 8) && (mat_cell_y < 35);
+    
+    // 7-segment for matrix
+    wire mat_seg_a = in_mat_digit_area && (mat_dig_y < 3) && (mat_dig_x >= 3) && (mat_dig_x < 20);
+    wire mat_seg_b = in_mat_digit_area && (mat_dig_x >= 20) && (mat_dig_y >= 2) && (mat_dig_y < 12);
+    wire mat_seg_c = in_mat_digit_area && (mat_dig_x >= 20) && (mat_dig_y >= 15) && (mat_dig_y < 25);
+    wire mat_seg_d = in_mat_digit_area && (mat_dig_y >= 24) && (mat_dig_x >= 3) && (mat_dig_x < 20);
+    wire mat_seg_e = in_mat_digit_area && (mat_dig_x < 3) && (mat_dig_y >= 15) && (mat_dig_y < 25);
+    wire mat_seg_f = in_mat_digit_area && (mat_dig_x < 3) && (mat_dig_y >= 2) && (mat_dig_y < 12);
+    wire mat_seg_g = in_mat_digit_area && (mat_dig_y >= 12) && (mat_dig_y < 15) && (mat_dig_x >= 3) && (mat_dig_x < 20);
+    
+    reg [6:0] mat_seg_en;
+    always @(*) begin
+        case (mat_digit)
+            4'd0: mat_seg_en = 7'b1111110;
+            4'd1: mat_seg_en = 7'b0110000;
+            4'd2: mat_seg_en = 7'b1101101;
+            4'd3: mat_seg_en = 7'b1111001;
+            4'd4: mat_seg_en = 7'b0110011;
+            4'd5: mat_seg_en = 7'b1011011;
+            4'd6: mat_seg_en = 7'b1011111;
+            4'd7: mat_seg_en = 7'b1110000;
+            4'd8: mat_seg_en = 7'b1111111;
+            4'd9: mat_seg_en = 7'b1111011;
+            default: mat_seg_en = 7'b0000000;
+                    endcase
+                end
+    
+    wire mat_digit_pixel = (mat_seg_en[6] && mat_seg_a) || (mat_seg_en[5] && mat_seg_b) ||
+                           (mat_seg_en[4] && mat_seg_c) || (mat_seg_en[3] && mat_seg_d) ||
+                           (mat_seg_en[2] && mat_seg_e) || (mat_seg_en[1] && mat_seg_f) ||
+                           (mat_seg_en[0] && mat_seg_g);
+    
+    wire mat_neg_sign = in_mat_digit_area && mat_is_neg &&
+                        (mat_dig_x >= 0) && (mat_dig_x < 6) && (mat_dig_y >= 11) && (mat_dig_y < 15);
+    
+    // Matrix cell border
+    wire mat_cell_border = in_mat_grid && 
+                           ((mat_cell_x < 1) || (mat_cell_x >= MATRIX_CELL_SIZE - 1) ||
+                            (mat_cell_y < 1) || (mat_cell_y >= MATRIX_CELL_SIZE - 1));
+    
+    // Matrix cursor (only in edit mode, sw1=0 means editing matrix)
+    wire mat_cursor = state_edit && (sw1 == 1'b0) && in_mat_grid &&
+                      (mat_row == edit_row) && (mat_col == edit_col);
+    wire mat_cursor_border = mat_cursor &&
+                             ((mat_cell_x < 5) || (mat_cell_x >= MATRIX_CELL_SIZE - 5) ||
+                              (mat_cell_y < 5) || (mat_cell_y >= MATRIX_CELL_SIZE - 5));
+
+    // ========================================================================
+    // VEC_NEW REGION - Horizontal vector showing computation result
+    // ========================================================================
+    wire [9:0] vnew_local_x = px - VEC_NEW_X0;
+    wire [9:0] vnew_local_y = py - VEC_NEW_Y0;
+    wire [9:0] vnew_width = VEC_NEW_X1 - VEC_NEW_X0;
+    wire [9:0] vnew_height = VEC_NEW_Y1 - VEC_NEW_Y0;
+    
+    // v_new element position
+    wire [9:0] vnew_grid_x0 = 15;
+    wire [2:0] vnew_idx = (vnew_local_x - vnew_grid_x0) / VEC_NEW_CELL_W;
+    wire [9:0] vnew_cell_x = (vnew_local_x - vnew_grid_x0) - (vnew_idx * VEC_NEW_CELL_W);
+    wire vnew_valid = (vnew_local_x >= vnew_grid_x0) && (vnew_idx < 4);
+    
+    // v_new brackets
+    wire vnew_left_bracket = in_vec_new_region && (vnew_local_x < 12) &&
+                             ((vnew_local_y < 5) || (vnew_local_y >= vnew_height - 5) || (vnew_local_x < 3));
+    wire vnew_right_bracket = in_vec_new_region && (vnew_local_x >= vnew_width - 12) &&
+                              ((vnew_local_y < 5) || (vnew_local_y >= vnew_height - 5) || (vnew_local_x >= vnew_width - 3));
+    
+    // Get v_new value
+    reg signed [15:0] vnew_val;
+    always @(*) begin
+        case (vnew_idx[1:0])
+            2'd0: vnew_val = vn[0];
+            2'd1: vnew_val = vn[1];
+            2'd2: vnew_val = vn[2];
+            2'd3: vnew_val = vn[3];
+                    endcase
+                end
+    
+    wire vnew_is_neg = vnew_val[15];
+    wire [15:0] vnew_abs_val = vnew_is_neg ? -vnew_val : vnew_val;
+    wire [3:0] vnew_digit = vnew_abs_val % 10;
+    
+    // v_new digit area
+    wire [9:0] vnew_dig_x = vnew_cell_x - 15;
+    wire [9:0] vnew_dig_y = vnew_local_y - 20;
+    wire in_vnew_digit_area = in_vec_new_region && vnew_valid &&
+                              (vnew_cell_x >= 15) && (vnew_cell_x < 55) &&
+                              (vnew_local_y >= 20) && (vnew_local_y < 55);
+    
+    // 7-segment for v_new
+    wire vnew_seg_a = in_vnew_digit_area && (vnew_dig_y < 4) && (vnew_dig_x >= 4) && (vnew_dig_x < 32);
+    wire vnew_seg_b = in_vnew_digit_area && (vnew_dig_x >= 32) && (vnew_dig_y >= 2) && (vnew_dig_y < 16);
+    wire vnew_seg_c = in_vnew_digit_area && (vnew_dig_x >= 32) && (vnew_dig_y >= 19) && (vnew_dig_y < 33);
+    wire vnew_seg_d = in_vnew_digit_area && (vnew_dig_y >= 31) && (vnew_dig_x >= 4) && (vnew_dig_x < 32);
+    wire vnew_seg_e = in_vnew_digit_area && (vnew_dig_x < 4) && (vnew_dig_y >= 19) && (vnew_dig_y < 33);
+    wire vnew_seg_f = in_vnew_digit_area && (vnew_dig_x < 4) && (vnew_dig_y >= 2) && (vnew_dig_y < 16);
+    wire vnew_seg_g = in_vnew_digit_area && (vnew_dig_y >= 15) && (vnew_dig_y < 20) && (vnew_dig_x >= 4) && (vnew_dig_x < 32);
+    
+    reg [6:0] vnew_seg_en;
+    always @(*) begin
+        case (vnew_digit)
+            4'd0: vnew_seg_en = 7'b1111110;
+            4'd1: vnew_seg_en = 7'b0110000;
+            4'd2: vnew_seg_en = 7'b1101101;
+            4'd3: vnew_seg_en = 7'b1111001;
+            4'd4: vnew_seg_en = 7'b0110011;
+            4'd5: vnew_seg_en = 7'b1011011;
+            4'd6: vnew_seg_en = 7'b1011111;
+            4'd7: vnew_seg_en = 7'b1110000;
+            4'd8: vnew_seg_en = 7'b1111111;
+            4'd9: vnew_seg_en = 7'b1111011;
+            default: vnew_seg_en = 7'b0000000;
+                    endcase
+                end
+    
+    wire vnew_digit_pixel = (vnew_seg_en[6] && vnew_seg_a) || (vnew_seg_en[5] && vnew_seg_b) ||
+                            (vnew_seg_en[4] && vnew_seg_c) || (vnew_seg_en[3] && vnew_seg_d) ||
+                            (vnew_seg_en[2] && vnew_seg_e) || (vnew_seg_en[1] && vnew_seg_f) ||
+                            (vnew_seg_en[0] && vnew_seg_g);
+    
+    wire vnew_neg_sign = in_vnew_digit_area && vnew_is_neg &&
+                         (vnew_dig_x >= 0) && (vnew_dig_x < 10) && (vnew_dig_y >= 14) && (vnew_dig_y < 19);
+    
+    // v_new border
+    wire vnew_border = in_vec_new_region &&
+                       ((vnew_local_x < 2) || (vnew_local_x >= vnew_width - 2) ||
+                        (vnew_local_y < 2) || (vnew_local_y >= vnew_height - 2));
+    
+    // ========================================================================
+    // ITERATION COUNTER DISPLAY
+    // ========================================================================
+    wire [3:0] iter_tens = iteration_count / 10;
+    wire [3:0] iter_ones = iteration_count % 10;
+    
+    wire [9:0] iter_local_x = px - ITER_X0;
+    wire [9:0] iter_local_y = py - ITER_Y0;
+    
+    wire in_iter_tens = in_iter_region && (iter_local_x >= 5) && (iter_local_x < 30);
+    wire in_iter_ones = in_iter_region && (iter_local_x >= 35) && (iter_local_x < 60);
+    
+    wire [9:0] iter_dig_x = in_iter_tens ? (iter_local_x - 5) : (iter_local_x - 35);
+    wire [9:0] iter_dig_y = iter_local_y - 5;
+    wire in_iter_digit_area = (in_iter_tens || in_iter_ones) && (iter_dig_y < 22);
+    
+    // 7-segment for iteration
+    wire iter_seg_a = in_iter_digit_area && (iter_dig_y < 3) && (iter_dig_x >= 3) && (iter_dig_x < 20);
+    wire iter_seg_b = in_iter_digit_area && (iter_dig_x >= 20) && (iter_dig_y >= 1) && (iter_dig_y < 10);
+    wire iter_seg_c = in_iter_digit_area && (iter_dig_x >= 20) && (iter_dig_y >= 12) && (iter_dig_y < 21);
+    wire iter_seg_d = in_iter_digit_area && (iter_dig_y >= 19) && (iter_dig_x >= 3) && (iter_dig_x < 20);
+    wire iter_seg_e = in_iter_digit_area && (iter_dig_x < 3) && (iter_dig_y >= 12) && (iter_dig_y < 21);
+    wire iter_seg_f = in_iter_digit_area && (iter_dig_x < 3) && (iter_dig_y >= 1) && (iter_dig_y < 10);
+    wire iter_seg_g = in_iter_digit_area && (iter_dig_y >= 9) && (iter_dig_y < 13) && (iter_dig_x >= 3) && (iter_dig_x < 20);
+    
+    wire [3:0] iter_curr_digit = in_iter_tens ? iter_tens : iter_ones;
+    reg [6:0] iter_seg_en;
+    always @(*) begin
+        case (iter_curr_digit)
+            4'd0: iter_seg_en = 7'b1111110;
+            4'd1: iter_seg_en = 7'b0110000;
+            4'd2: iter_seg_en = 7'b1101101;
+            4'd3: iter_seg_en = 7'b1111001;
+            4'd4: iter_seg_en = 7'b0110011;
+            4'd5: iter_seg_en = 7'b1011011;
+            4'd6: iter_seg_en = 7'b1011111;
+            4'd7: iter_seg_en = 7'b1110000;
+            4'd8: iter_seg_en = 7'b1111111;
+            4'd9: iter_seg_en = 7'b1111011;
+            default: iter_seg_en = 7'b0000000;
+        endcase
+    end
+    
+    wire iter_digit_pixel = (iter_seg_en[6] && iter_seg_a) || (iter_seg_en[5] && iter_seg_b) ||
+                            (iter_seg_en[4] && iter_seg_c) || (iter_seg_en[3] && iter_seg_d) ||
+                            (iter_seg_en[2] && iter_seg_e) || (iter_seg_en[1] && iter_seg_f) ||
+                            (iter_seg_en[0] && iter_seg_g);
+
+    // ========================================================================
+    // LABELS
+    // ========================================================================
+    // "v" label for editable vector
+    wire in_v_label = (px >= VEC_V_X0 + 35) && (px < VEC_V_X0 + 65) &&
+                      (py >= VEC_V_Y0 - 18) && (py < VEC_V_Y0 - 5);
+    
+    // "A" label for matrix
+    wire in_A_label = (px >= MATRIX_X0 + 80) && (px < MATRIX_X0 + 110) &&
+                      (py >= MATRIX_Y0 - 18) && (py < MATRIX_Y0 - 5);
+    
+    // "v_old" and "v_new" chart labels
+    wire in_vo_label = (px >= CHART_X0 + 70) && (px < CHART_X0 + 150) &&
+                       (py >= CHART_Y0 - 18) && (py < CHART_Y0 - 5);
+    wire in_vn_chart_label = (px >= CHART_X0 + half_width + 70) && (px < CHART_X0 + half_width + 150) &&
+                             (py >= CHART_Y0 - 18) && (py < CHART_Y0 - 5);
+    
+    // "result" label for v_new
+    wire in_result_label = (px >= VEC_NEW_X0 + 100) && (px < VEC_NEW_X0 + 200) &&
+                           (py >= VEC_NEW_Y0 - 18) && (py < VEC_NEW_Y0 - 5);
+    
+    // "iter" label
+    wire in_iter_label = (px >= ITER_X0) && (px < ITER_X0 + 50) &&
+                         (py >= ITER_Y0 - 18) && (py < ITER_Y0 - 5);
+    
+    // ========================================================================
+    // MODE INDICATOR
+    // ========================================================================
+    wire in_mode_area = (px >= 550) && (px < 630) && (py >= 5) && (py < 22);
+    
+    // Debug: Show edit position indicators (orange bars on left/top)
+    wire edit_pos_indicator = state_edit && (
+        // Show row indicator on the left
+        ((px >= 2) && (px < 6) && (py >= 240 + edit_row * 10) && (py < 248 + edit_row * 10)) ||
+        // Show col indicator on the top (only when editing matrix)
+        ((sw1 == 1'b0) && (px >= 200 + edit_col * 10) && (px < 208 + edit_col * 10) && (py >= 240) && (py < 244))
+    );
+    
+    // ========================================================================
+    // DEBUG DISPLAY - Shows switch states and edit position
+    // ========================================================================
+    // Big visual indicators for switch states (top of screen)
+    wire sw0_indicator = (px >= 10) && (px < 60) && (py >= 5) && (py < 20);
+    wire sw1_indicator = (px >= 70) && (px < 120) && (py >= 5) && (py < 20);
+    
+    // Show edit_row as vertical bars (left side)
+    wire row0_bar = (px >= 3) && (px < 8) && (py >= 60) && (py < 80) && (edit_row == 2'd0);
+    wire row1_bar = (px >= 3) && (px < 8) && (py >= 90) && (py < 110) && (edit_row == 2'd1);
+    wire row2_bar = (px >= 3) && (px < 8) && (py >= 120) && (py < 140) && (edit_row == 2'd2);
+    wire row3_bar = (px >= 3) && (px < 8) && (py >= 150) && (py < 170) && (edit_row == 2'd3);
+    wire row_indicator = row0_bar || row1_bar || row2_bar || row3_bar;
+    
+    // Show edit_col as horizontal bars (top)
+    wire col0_bar = (px >= 200) && (px < 220) && (py >= 235) && (py < 240) && (edit_col == 2'd0);
+    wire col1_bar = (px >= 230) && (px < 250) && (py >= 235) && (py < 240) && (edit_col == 2'd1);
+    wire col2_bar = (px >= 260) && (px < 280) && (py >= 235) && (py < 240) && (edit_col == 2'd2);
+    wire col3_bar = (px >= 290) && (px < 310) && (py >= 235) && (py < 240) && (edit_col == 2'd3);
+    wire col_indicator = col0_bar || col1_bar || col2_bar || col3_bar;
+    
+    // Full cell highlight for cursor (VERY OBVIOUS)
+    wire vec_v_cursor_fill = vec_v_cursor && in_vec_v_region;
+    wire mat_cursor_fill = mat_cursor && in_mat_grid;
+    
+    // ========================================================================
+    // BLINKING CURSOR - for debugging VGA updates
+    // ========================================================================
+    // Create a blink signal that toggles at ~2 Hz (visible to human eye)
+    // At 25 MHz clock, divide by 2^24 gives ~1.5 Hz
+    reg [24:0] blink_counter;
+    wire cursor_blink;
+    wire fast_blink;
+    
+    always @(posedge clk) begin
+        blink_counter <= blink_counter + 1'b1;
+    end
+    
+    assign cursor_blink = blink_counter[24];  // ~1.5 Hz blink rate
+    assign fast_blink = blink_counter[23];    // ~3 Hz blink rate (faster, more obvious)
+    
+    // Fixed position blink indicator (top-right corner) - PROVES VGA is updating!
+    wire blink_indicator = (px >= 630) && (px < 638) && (py >= 2) && (py < 10);
+    
+    // DEBUG: Always-on cursor test (should always show in matrix [0][0])
+    wire test_cursor_pos = (px >= MATRIX_X0 + 5) && (px < MATRIX_X0 + 15) &&
+                           (py >= MATRIX_Y0 + 5) && (py < MATRIX_Y0 + 15);
+    
+    // DEBUG: Show edit_row/edit_col values as colored bars
+    wire edit_row_debug = (py >= 430) && (py < 440) && (px >= 10 + edit_row * 20) && (px < 18 + edit_row * 20);
+    wire edit_col_debug = (py >= 450) && (py < 460) && (px >= 10 + edit_col * 20) && (px < 18 + edit_col * 20);
+    
+    // ========================================================================
+    // RGB OUTPUT - REGISTERED
+    // ========================================================================
+    always @(posedge clk) begin
+        if (~bright) begin
+            rgb <= BLACK;
+        end
+        // BLINK INDICATOR (top-right corner) - ALWAYS VISIBLE, proves VGA updates!
+        else if (blink_indicator && fast_blink) begin
+            rgb <= RED;  // Blinks red at ~3 Hz - if this doesn't blink, VGA not updating!
+        end
+        // DEBUG: Test cursor at fixed position (should always show small blue square in matrix [0][0])
+        else if (test_cursor_pos) begin
+            rgb <= BLUE;  // Static blue square - proves cursor rendering works
+        end
+        // DEBUG: Visual display of edit_row value (colored bars at bottom)
+        else if (edit_row_debug) begin
+            rgb <= CYAN;  // Shows which row is selected (0-3)
+        end
+        // DEBUG: Visual display of edit_col value (colored bars at bottom)
+        else if (edit_col_debug) begin
+            rgb <= MAGENTA;  // Shows which column is selected (0-3)
+        end
+        // DEBUG: Switch state indicators (top of screen)
+        else if (sw0_indicator) begin
+            rgb <= sw0 ? GREEN : RED;  // Green if ON, Red if OFF
+        end
+        else if (sw1_indicator) begin
+            rgb <= sw1 ? CYAN : MAGENTA;  // Cyan if ON, Magenta if OFF
+        end
+        // DEBUG: Row indicator (left side - shows which row is selected)
+        else if (row_indicator) begin
+            rgb <= YELLOW;
+        end
+        // DEBUG: Col indicator (top - shows which column is selected)
+        else if (col_indicator) begin
+            rgb <= YELLOW;
+        end
+        // CURSOR: Different appearance based on locked state
+        // When LOCKED (editing): Solid green fill (no blink) - cell is being edited
+        else if ((vec_v_cursor_fill || mat_cursor_fill) && cell_locked) begin
+            rgb <= GREEN;  // Solid green = locked/editing mode
+        end
+        // When UNLOCKED (navigating): Blinking yellow (shows you can move)
+        else if ((vec_v_cursor_fill || mat_cursor_fill) && cursor_blink) begin
+            rgb <= YELLOW;  // Blinks yellow = unlocked/navigation mode
+        end
+        // Cursor border - color indicates locked state
+        else if (vec_v_cursor_border || mat_cursor_border) begin
+            rgb <= cell_locked ? GREEN : ORANGE;  // Green border when locked, orange when unlocked
+        end
+        // Debug: edit position indicators
+        else if (edit_pos_indicator) begin
+            rgb <= ORANGE;
+        end
+        // Bar chart bars
+        else if (in_vo_bar) begin
+            rgb <= CYAN;
+        end
+        else if (in_vn_bar) begin
+            rgb <= GREEN;
+        end
+        // Chart structure
+        else if (chart_border || chart_divider || chart_baseline) begin
+            rgb <= GRAY;
+        end
+        // Brackets
+        else if (vec_v_left_bracket || vec_v_right_bracket) begin
+            rgb <= WHITE;
+        end
+        else if (mat_left_bracket || mat_right_bracket) begin
+            rgb <= WHITE;
+        end
+        else if (vnew_left_bracket || vnew_right_bracket) begin
+            rgb <= WHITE;
+        end
+        // Matrix cell borders
+        else if (mat_cell_border) begin
+            rgb <= GRAY;
+        end
+        // v_new border
+        else if (vnew_border) begin
+            rgb <= GRAY;
+        end
+        // Digits - editable vector v (CYAN)
+        else if (vv_digit_pixel || vv_neg_sign) begin
+            rgb <= CYAN;
+        end
+        // Digits - matrix (WHITE)
+        else if (mat_digit_pixel || mat_neg_sign) begin
+            rgb <= WHITE;
+        end
+        // Digits - result v_new (GREEN)
+        else if (vnew_digit_pixel || vnew_neg_sign) begin
+            rgb <= GREEN;
+        end
+        // Digits - iteration counter (MAGENTA)
+        else if (iter_digit_pixel) begin
+            rgb <= MAGENTA;
+        end
+        // Labels
+        else if (in_v_label || in_A_label || in_vo_label || in_vn_chart_label || 
+                 in_result_label || in_iter_label) begin
+            rgb <= GRAY;
+        end
+        // Mode indicator
+        else if (in_mode_area) begin
+            rgb <= state_edit ? ORANGE : (fsm_done ? GREEN : RED);
+        end
+        // Background
+        else begin
+            rgb <= BLACK;
         end
     end
 

@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-// abs_diff.v -
+// abs_diff.v - Simplified combinational version
 
 module abs_diff #(parameter WIDTH = 16) (
     input  wire signed [4*WIDTH-1:0] a,
@@ -23,6 +23,7 @@ module abs_diff #(parameter WIDTH = 16) (
     wire signed [WIDTH-1:0] d2 = a2 - b2;
     wire signed [WIDTH-1:0] d3 = a3 - b3;
 
+    // Simple absolute value - let synthesizer optimize
     wire signed [WIDTH-1:0] diff0 = (d0 < 0) ? -d0 : d0;
     wire signed [WIDTH-1:0] diff1 = (d1 < 0) ? -d1 : d1;
     wire signed [WIDTH-1:0] diff2 = (d2 < 0) ? -d2 : d2;

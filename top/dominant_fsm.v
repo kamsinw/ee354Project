@@ -17,19 +17,21 @@ module dominant_fsm (
     output reg         start_scale,
     output reg         start_diff,
     output reg         done,
-    output wire [6:0]  state_out
+    output wire [7:0]  state_out
 );
 
-    localparam IDLE     = 7'b0000001;
-    localparam LOAD     = 7'b0000010;
-    localparam MULT     = 7'b0000100;
-    localparam SCALE    = 7'b0001000;
-    localparam DIFF     = 7'b0010000;
-    localparam CHECK    = 7'b0100000;
-    localparam DONE_ST  = 7'b1000000;
+    localparam IDLE     = 8'b00000001;
+    localparam LOAD     = 8'b00000010;
+    localparam MULT     = 8'b00000100;
+    localparam WAIT_MAX = 8'b00001000;  // Wait for max_finder pipeline
+    localparam SCALE    = 8'b00010000;
+    localparam DIFF     = 8'b00100000;
+    localparam CHECK    = 8'b01000000;
+    localparam DONE_ST  = 8'b10000000;
 
-    reg [6:0] state;
+    reg [7:0] state;
     reg start_mult_reg, start_scale_reg, start_diff_reg;
+    reg [1:0] wait_max_count;
     
     wire [15:0] eps16 = {13'b0, epsilon};
     
@@ -48,6 +50,7 @@ module dominant_fsm (
             start_mult_reg <= 1'b0;
             start_scale_reg <= 1'b0;
             start_diff_reg <= 1'b0;
+            wait_max_count <= 2'd0;
         end else begin
             case (state)
                 IDLE: begin
@@ -96,6 +99,24 @@ module dominant_fsm (
                     if (mul_done) begin
                         start_mult_reg <= 1'b0;
                         load_y <= 1'b1;
+                        wait_max_count <= 2'd2;
+                        state <= WAIT_MAX;
+                    end
+                end
+
+                WAIT_MAX: begin
+                    // Wait 2 cycles for max_finder pipeline to settle
+                    load_v_old <= 1'b0;
+                    load_y <= 1'b0;
+                    load_max_d <= 1'b0;
+                    start_mult <= 1'b0;
+                    start_scale <= 1'b0;
+                    start_diff <= 1'b0;
+                    done <= 1'b0;
+                    if (wait_max_count != 0) begin
+                        wait_max_count <= wait_max_count - 1'b1;
+                        state <= WAIT_MAX;
+                    end else begin
                         state <= SCALE;
                     end
                 end

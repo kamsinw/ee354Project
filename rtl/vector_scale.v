@@ -12,6 +12,8 @@ module vector_scale #(parameter WIDTH = 16) (
     wire signed [WIDTH-1:0] max_val;
 
     max_finder #(WIDTH) MF (
+        .clk(clk),
+        .reset(reset),
         .a(V_in),
         .max_val(max_val)
     );

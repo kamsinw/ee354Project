@@ -1,74 +1,49 @@
 `timescale 1ns / 1ps
 
-// counter.v - VGA timing counter 
+// counter.v - VGA timing counter following EE354_vga_demo pattern
+// Matches the demo's display_controller.v exactly
 
 module counter (
     input  wire clk,
-    input  wire reset,
-    output reg  [9:0] hcount,
-    output reg  [9:0] vcount,
-    output reg  hsync,
-    output reg  vsync,
-    output reg  visible
+    output wire hSync,
+    output wire vSync,
+    output reg  bright,
+    output reg  [9:0] hCount,
+    output reg  [9:0] vCount
 );
 
+    // Initialize counters
+    initial begin
+        hCount = 10'd0;
+        vCount = 10'd0;
+        bright = 1'b0;
+    end
+    
+    // Horizontal and vertical counter logic (matches demo exactly)
     always @(posedge clk) begin
-        if (reset) begin
-            hcount <= 10'd0;
+        if (hCount < 10'd799) begin
+            hCount <= hCount + 1'b1;
+        end else if (vCount < 10'd524) begin
+            hCount <= 10'd0;
+            vCount <= vCount + 1'b1;
         end else begin
-            if (hcount == 10'd799) begin
-                hcount <= 10'd0;
-            end else begin
-                hcount <= hcount + 1'b1;
-            end
+            hCount <= 10'd0;
+            vCount <= 10'd0;
         end
     end
-
+    
+    // Sync signals (active low during sync pulse)
+    // Demo uses: hSync active when hCount < 96, vSync active when vCount < 2
+    assign hSync = (hCount < 10'd96) ? 1'b1 : 1'b0;
+    assign vSync = (vCount < 10'd2) ? 1'b1 : 1'b0;
+    
+    // Bright signal - visible area
+    // Demo: hCount > 143 && hCount < 784 && vCount > 34 && vCount < 516
     always @(posedge clk) begin
-        if (reset) begin
-            vcount <= 10'd0;
-        end else begin
-            if (hcount == 10'd799) begin
-                if (vcount == 10'd524) begin
-                    vcount <= 10'd0;
-                end else begin
-                    vcount <= vcount + 1'b1;
-                end
-            end
-        end
-    end
-
-    always @(posedge clk) begin
-        if (reset) begin
-            hsync <= 1'b1;
-        end else begin
-            if (hcount >= 10'd656 && hcount <= 10'd751) begin
-                hsync <= 1'b0;
-            end else begin
-                hsync <= 1'b1;
-            end
-        end
-    end
-
-    always @(posedge clk) begin
-        if (reset) begin
-            vsync <= 1'b1;
-        end else begin
-            if (vcount >= 10'd490 && vcount <= 10'd491) begin
-                vsync <= 1'b0;
-            end else begin
-                vsync <= 1'b1;
-            end
-        end
-    end
-
-    always @(posedge clk) begin
-        if (reset) begin
-            visible <= 1'b0;
-        end else begin
-            visible <= (hcount < 10'd640) && (vcount < 10'd480);
-        end
+        if (hCount > 10'd143 && hCount < 10'd784 && vCount > 10'd34 && vCount < 10'd516)
+            bright <= 1'b1;
+        else
+            bright <= 1'b0;
     end
 
 endmodule
-
