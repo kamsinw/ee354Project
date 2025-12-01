@@ -1,8 +1,8 @@
-// matrix_memory.v
-// 4x4 matrix storage with per-cell write
+`timescale 1ns / 1ps
 
 module matrix_memory #(parameter WIDTH = 16) (
     input clk,
+    input reset,
     input we,
     input [1:0] row,
     input [1:0] col,
@@ -26,10 +26,17 @@ module matrix_memory #(parameter WIDTH = 16) (
 );
 
     reg signed [WIDTH-1:0] mem [0:3][0:3];
+    integer i, j;
 
     always @(posedge clk) begin
-        if (we)
+        if (reset) begin
+            mem[0][0] <= 16'sd4; mem[0][1] <= 16'sd1; mem[0][2] <= 16'sd1; mem[0][3] <= 16'sd1;
+            mem[1][0] <= 16'sd1; mem[1][1] <= 16'sd4; mem[1][2] <= 16'sd1; mem[1][3] <= 16'sd1;
+            mem[2][0] <= 16'sd1; mem[2][1] <= 16'sd1; mem[2][2] <= 16'sd4; mem[2][3] <= 16'sd1;
+            mem[3][0] <= 16'sd1; mem[3][1] <= 16'sd1; mem[3][2] <= 16'sd1; mem[3][3] <= 16'sd4;
+        end else if (we) begin
             mem[row][col] <= din;
+        end
     end
 
     assign a00 = mem[0][0]; assign a01 = mem[0][1];
@@ -40,7 +47,5 @@ module matrix_memory #(parameter WIDTH = 16) (
     assign a22 = mem[2][2]; assign a23 = mem[2][3];
     assign a30 = mem[3][0]; assign a31 = mem[3][1];
     assign a32 = mem[3][2]; assign a33 = mem[3][3];
-
-    
 
 endmodule

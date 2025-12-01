@@ -11,81 +11,117 @@
 
 */
 
-module dominant_datapath( 
+module dominant_datapath #(
+    parameter WIDTH = 8
+) (
     input wire clk,
     input wire reset,
-
     input wire load_v_old,
     input wire load_y,
-    input wire load_v_new,
-    input wire load_d,
-    input wire load_max_y
     input wire load_max_d,
-
-
-    input wire [1:0] row,
-    input wire [1:0] col,
-
-    input wire start_mult, start_scale, start_diff, 
-    
-
-    input wire [2:0] epsilon,
-
+    input wire start_mult, start_scale, start_diff,
+    // matrix scalar inputs (top provides 16-bit matrix entries) - we'll take low WIDTH bits
     input signed [15:0] A00, A01, A02, A03,
     input signed [15:0] A10, A11, A12, A13,
     input signed [15:0] A20, A21, A22, A23,
     input signed [15:0] A30, A31, A32, A33,
-
-    output signed [63:0] v0,
-    output signed [63:0] v1,
-    output signed [63:0] v2,
-    output signed [63:0] v3
+    // expose scaled vector outputs as 16-bit sign-extended values for top compatibility
+    output signed [15:0] v0,
+    output signed [15:0] v1,
+    output signed [15:0] v2,
+    output signed [15:0] v3,
+    output signed [15:0] max_d_out
 );
 
+    // Build packed A bus from scalar inputs, taking low WIDTH bits of each scalar
+    wire signed [16*WIDTH-1:0] A_packed = {
+        A33[WIDTH-1:0], A32[WIDTH-1:0], A31[WIDTH-1:0], A30[WIDTH-1:0],
+        A23[WIDTH-1:0], A22[WIDTH-1:0], A21[WIDTH-1:0], A20[WIDTH-1:0],
+        A13[WIDTH-1:0], A12[WIDTH-1:0], A11[WIDTH-1:0], A10[WIDTH-1:0],
+        A03[WIDTH-1:0], A02[WIDTH-1:0], A01[WIDTH-1:0], A00[WIDTH-1:0]
+    };
 
-wire signed  [15:0] A[0:3][0:3];
+    // Packed vectors for v_old, v_new, y_vec
+    wire signed [4*WIDTH-1:0] v_old_packed;
+    wire signed [4*WIDTH-1:0] v_new_packed;
+    wire signed [4*WIDTH-1:0] y_vec_packed;
 
-assign A[0][0] = A00; assign A[0][1] = A01;
-assign A[0][2] = A02; assign A[0][3] = A03;
-assign A[1][0] = A10; assign A[1][1] = A11;
-assign A[1][2] = A12; assign A[1][3] = A13;
-assign A[2][0] = A20; assign A[2][1] = A21;
-assign A[2][2] = A22; assign A[2][3] = A23;
-assign A[3][0] = A30; assign A[3][1] = A31;
-assign A[3][2] = A32; assign A[3][3] = A33;
+    wire mul_done;
+    wire scale_done;
+    wire diff_done;
 
+    wire signed [WIDTH-1:0] max_d;
 
-wire signed [63:0] v_old[0:3];
-wire signed [63:0] v_new[0:3];
-wire signed [63:0] y_vec[0:3];
-wire signed [63:0] d_vec[0:3];
+    reg signed [4*WIDTH-1:0] y_reg;
+    reg signed [WIDTH-1:0] max_d_reg;
 
-wire signed [63:0] max_y;
-wire signed [63:0] max_d;
+    // vector register stores v_new into v_old
+    vector_register #(WIDTH) vreg_old(
+        .clk(clk),
+        .reset(reset),
+        .load(load_v_old),
+        .in(v_new_packed),
+        .out(v_old_packed)
+    );
 
-wire mul_done
+    matrix_vector_mult #(.WIDTH(WIDTH)) matmul (
+        .clk(clk),
+        .reset(reset),
+        .start(start_mult),
+        .A(A_packed),
+        .V(v_old_packed),
+        .Y(y_vec_packed),
+        .done(mul_done)
+    );
 
-vector_register vreg_old(
-    .clk(clk)
-    .reset(reset)
-    .load(load_v_old)
-    .in(v_new)
-    .out(v_old)
+    always @(posedge clk) begin
+        if (reset) begin
+            y_reg <= {(4*WIDTH){1'b0}};
+        end else if (load_y) begin
+            y_reg <= y_vec_packed;
+        end
+    end
 
-);
+    vector_scale #(.WIDTH(WIDTH)) vscale (
+        .clk(clk),
+        .reset(reset),
+        .start(start_scale),
+        .V_in(y_reg),
+        .V_out(v_new_packed),
+        .done(scale_done)
+    );
 
-matrix_vector_mult matmul (
-    .clk(clk)
-    .reset(reset)
-    .start(start_mult)
-    .A(A)
-    .V(v_old)
-    .Y(y_vec)
-    .done(mul_done)
-);
-wire max_y_done;
+    // Vector difference and max
+    vector_diff #(.WIDTH(WIDTH)) vdiff (
+        .clk(clk),
+        .reset(reset),
+        .start(start_diff),
+        .V_new(v_new_packed),
+        .V_old(v_old_packed),
+        .max_diff(max_d),
+        .done(diff_done)
+    );
 
+    always @(posedge clk) begin
+        if (reset) begin
+            max_d_reg <= {WIDTH{1'b0}};
+        end else if (load_max_d) begin
+            max_d_reg <= max_d;
+        end
+    end
 
+    // expose v_new outputs to module outputs, sign-extended to 16 bits for top
+    wire signed [WIDTH-1:0] v_new_0 = v_new_packed[WIDTH-1:0];
+    wire signed [WIDTH-1:0] v_new_1 = v_new_packed[2*WIDTH-1:WIDTH];
+    wire signed [WIDTH-1:0] v_new_2 = v_new_packed[3*WIDTH-1:2*WIDTH];
+    wire signed [WIDTH-1:0] v_new_3 = v_new_packed[4*WIDTH-1:3*WIDTH];
 
+    assign v0 = {{(16-WIDTH){v_new_0[WIDTH-1]}}, v_new_0};
+    assign v1 = {{(16-WIDTH){v_new_1[WIDTH-1]}}, v_new_1};
+    assign v2 = {{(16-WIDTH){v_new_2[WIDTH-1]}}, v_new_2};
+    assign v3 = {{(16-WIDTH){v_new_3[WIDTH-1]}}, v_new_3};
 
+    // sign-extend max_d_reg to 16 bits for FSM input
+    assign max_d_out = {{(16-WIDTH){max_d_reg[WIDTH-1]}}, max_d_reg};
 
+endmodule
