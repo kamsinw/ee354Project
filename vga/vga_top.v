@@ -18,8 +18,30 @@ module vga_top (
     output wire [3:0] vga_blue
 );
 
-    // Clock is now 25MHz directly, no division needed
-    wire clk_25mhz = clk_100mhz;  // Input clock is now 25MHz (40ns period)
+    // Divide 62.5 MHz down to 25 MHz (divide by 2.5)
+    // Input: 62.5 MHz (16ns period), Output: 25 MHz (40ns period)
+    // Use a 5-state counter (0-4) and toggle at states 0 and 2
+    // This gives 2.5 input cycles per output cycle
+    reg clk_25mhz_reg;
+    reg [2:0] clk_div_counter;
+    
+    always @(posedge clk_100mhz) begin
+        if (reset) begin
+            clk_25mhz_reg <= 1'b0;
+            clk_div_counter <= 3'd0;
+        end else begin
+            if (clk_div_counter == 3'd0 || clk_div_counter == 3'd2) begin
+                clk_25mhz_reg <= ~clk_25mhz_reg;
+            end
+            if (clk_div_counter == 3'd4) begin
+                clk_div_counter <= 3'd0;
+            end else begin
+                clk_div_counter <= clk_div_counter + 1'b1;
+            end
+        end
+    end
+    
+    wire clk_25mhz = clk_25mhz_reg;
 
     wire [9:0] hcount, vcount;
     wire visible;
