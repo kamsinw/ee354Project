@@ -78,6 +78,38 @@ module top_eigenvector (
     reg signed [15:0] matrix_a [0:3][0:3];
     reg signed [15:0] vector_v [0:3];
     
+    // Next-state logic for edit_row and edit_col (combinational)
+    // This block ONLY computes next state - reset is handled in sequential block
+    wire [1:0] next_edit_row;
+    wire [1:0] next_edit_col;
+    
+    always @(*) begin
+        // Default: keep current values
+        next_edit_row = edit_row;
+        next_edit_col = edit_col;
+        
+        if (~sw0) begin
+            // Handle row changes
+            if (btnu_pulse) begin
+                if (edit_row > 2'b00)
+                    next_edit_row = edit_row - 1'b1;
+            end else if (btnd_pulse) begin
+                if (edit_row < 2'b11)
+                    next_edit_row = edit_row + 1'b1;
+            end
+            
+            // Handle column changes
+            if (btnl_pulse) begin
+                if (edit_col > 2'b00)
+                    next_edit_col = edit_col - 1'b1;
+            end else if (btnr_pulse) begin
+                if (edit_col < 2'b11)
+                    next_edit_col = edit_col + 1'b1;
+            end
+        end
+        // In run mode (sw0 == 1), keep current values (already set as default)
+    end
+    
     integer i, j;
     always @(posedge clk) begin
         if (reset) begin
@@ -91,33 +123,25 @@ module top_eigenvector (
         end
     end
     
-    always @(posedge clk) begin
-        if (reset) begin
-            edit_row <= 2'b00;
-            edit_col <= 2'b00;
-            edit_val <= 16'sd0;
-        end
-    end
-    
+    // SINGLE always block for edit_row and edit_col state update
     always @(posedge clk_1k) begin
         if (reset) begin
             edit_row <= 2'b00;
             edit_col <= 2'b00;
+        end else begin
+            edit_row <= next_edit_row;
+            edit_col <= next_edit_col;
+        end
+    end
+    
+    // edit_val updates (separate from edit_row/edit_col)
+    always @(posedge clk_1k) begin
+        if (reset) begin
+            edit_val <= 16'sd0;
         end else if (~sw0) begin
-            if (btnu_pulse) begin
-                if (edit_row > 2'b00)
-                    edit_row <= edit_row - 1'b1;
-            end else if (btnd_pulse) begin
-                if (edit_row < 2'b11)
-                    edit_row <= edit_row + 1'b1;
-            end
             if (btnl_pulse) begin
-                if (edit_col > 2'b00)
-                    edit_col <= edit_col - 1'b1;
                 edit_val <= edit_val - 16'sd1;
             end else if (btnr_pulse) begin
-                if (edit_col < 2'b11)
-                    edit_col <= edit_col + 1'b1;
                 edit_val <= edit_val + 16'sd1;
             end
         end
