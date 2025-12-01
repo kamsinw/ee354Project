@@ -120,8 +120,31 @@ module display_controller (
     wire state_running = (fsm_state != IDLE) && (fsm_state != DONE_ST);
     wire state_done = fsm_done;
     
+    // ========================================================================
+    // BLOCK 1: Compute matrix_val, vector_val, abs values, and ones digits
+    // ========================================================================
+    reg signed [15:0] matrix_val;
+    reg signed [15:0] vector_val;
+    reg [15:0] matrix_abs;
+    reg [15:0] vector_abs;
+    reg [3:0] matrix_ones;
+    reg [3:0] vector_ones;
+    
+    always @(*) begin
+        // Matrix/vector value extraction (for display in cells)
+        matrix_val = matrix_a_unpack[matrix_row][matrix_col];
+        vector_val = vector_v_unpack[vector_row];
+        
+        // Absolute values
+        matrix_abs = (matrix_val < 0) ? -matrix_val : matrix_val;
+        vector_abs = (vector_val < 0) ? -vector_val : vector_val;
+        
+        // Extract digits (ones only for simplicity in small cells)
+        matrix_ones = matrix_abs[3:0];
+        vector_ones = vector_abs[3:0];
+    end
+    
     // Bar graph calculations
-    // Find maximum absolute value for scaling
     wire [15:0] v_old_abs [0:3];
     wire [15:0] v_new_abs [0:3];
     assign v_old_abs[0] = (v_old_unpack[0] < 0) ? -v_old_unpack[0] : v_old_unpack[0];
@@ -216,10 +239,6 @@ module display_controller (
     wire in_any_bar = in_bar_old[0] || in_bar_old[1] || in_bar_old[2] || in_bar_old[3] ||
                       in_bar_new[0] || in_bar_new[1] || in_bar_new[2] || in_bar_new[3];
     
-    // Simple text rendering (8x8 pixel characters)
-    // Banner text rendering (simplified - just show state and iteration)
-    // We'll use a simple approach: render digits using block_digit_renderer
-    
     // Extract digits from iteration_count
     wire [3:0] iter_hundreds = (iteration_count >= 200) ? 4'd2 :
                                (iteration_count >= 100) ? 4'd1 : 4'd0;
@@ -237,21 +256,6 @@ module display_controller (
     
     // Extract epsilon value
     wire [3:0] eps_val = {1'b0, sw_eps};
-    
-    // Matrix/vector value extraction (for display in cells)
-    wire signed [15:0] matrix_val = matrix_a_unpack[matrix_row][matrix_col];
-    wire signed [15:0] vector_val = vector_v_unpack[vector_row];
-    
-    wire [15:0] matrix_abs = (matrix_val < 0) ? -matrix_val : matrix_val;
-    wire [15:0] vector_abs = (vector_val < 0) ? -vector_val : vector_val;
-    
-    // Extract digits (ones only for simplicity in small cells)
-    wire [3:0] matrix_ones = matrix_abs[3:0];
-    wire [3:0] vector_ones = vector_abs[3:0];
-    
-    // Simple 8x8 character rendering for banner
-    // We'll render a simplified version: just show state name and iteration
-    // Position: "EDIT" at (10, 5), "Iter: XX" at (100, 5), "eps = X" at (200, 5)
     
     // Character rendering helper (8x8 grid)
     function [7:0] char_line;
@@ -394,7 +398,7 @@ module display_controller (
         end
     endfunction
     
-    // Render character at position
+    // Render character at position - compute one pixel at a time
     function pixel_in_char;
         input [9:0] char_x, char_y;
         input [3:0] char_code;
@@ -414,31 +418,122 @@ module display_controller (
         end
     endfunction
     
-    // Banner rendering
-    wire banner_text = pixel_in_char(10, 5, (state_edit ? 4'd4 : (state_running ? 4'd7 : 4'd3)), px, py) || // E/R/D
-                      pixel_in_char(18, 5, (state_edit ? 4'd3 : (state_running ? 4'd2 : 4'd0)), px, py) || // D/R/O
-                      pixel_in_char(26, 5, (state_edit ? 4'd8 : (state_running ? 4'd0 : 4'd3)), px, py) || // I/U/N
-                      pixel_in_char(34, 5, (state_edit ? 4'd9 : (state_running ? 4'd7 : 4'd4)), px, py) || // T/N/E
-                      (state_running && pixel_in_char(42, 5, 4'd7, px, py)) || // N
-                      (state_running && pixel_in_char(50, 5, 4'd6, px, py)) || // G
-                      (state_done && pixel_in_char(42, 5, 4'd3, px, py)) || // D
-                      (state_done && pixel_in_char(50, 5, 4'd0, px, py)) || // O
-                      (state_done && pixel_in_char(58, 5, 4'd3, px, py)) || // D
-                      (state_done && pixel_in_char(66, 5, 4'd4, px, py)) || // E
-                      // Iteration count
-                      pixel_in_char(100, 5, 4'd8, px, py) || // I
-                      pixel_in_char(108, 5, 4'd9, px, py) || // t
-                      pixel_in_char(116, 5, 4'd4, px, py) || // e
-                      pixel_in_char(124, 5, 4'd7, px, py) || // r
-                      pixel_in_char(132, 5, 4'd0, px, py) || // :
-                      pixel_in_char(140, 5, iter_tens, px, py) ||
-                      pixel_in_char(148, 5, iter_ones, px, py) ||
-                      // Epsilon
-                      pixel_in_char(200, 5, 4'd4, px, py) || // e
-                      pixel_in_char(208, 5, 4'd7, px, py) || // p
-                      pixel_in_char(216, 5, 4'd8, px, py) || // s
-                      pixel_in_char(224, 5, 4'd0, px, py) || // =
-                      pixel_in_char(232, 5, eps_val, px, py);
+    // ========================================================================
+    // BLOCK 2: Precompute all pixel_in_char calls for text rendering
+    // ========================================================================
+    // State character pixels
+    reg banner_char_0, banner_char_1, banner_char_2, banner_char_3;
+    reg banner_char_4, banner_char_5, banner_char_6, banner_char_7;
+    reg banner_char_8, banner_char_9, banner_char_10, banner_char_11;
+    reg banner_char_12, banner_char_13, banner_char_14, banner_char_15;
+    reg banner_char_16, banner_char_17, banner_char_18, banner_char_19;
+    
+    // Iteration count pixels
+    reg banner_char_i, banner_char_t, banner_char_e, banner_char_r, banner_char_colon;
+    reg banner_char_iter_tens, banner_char_iter_ones;
+    
+    // Epsilon pixels
+    reg banner_char_eps_e, banner_char_eps_p, banner_char_eps_s, banner_char_eps_eq, banner_char_eps_val;
+    
+    // Done message pixels
+    reg done_char_0, done_char_1, done_char_2, done_char_3, done_char_4;
+    reg done_char_5, done_char_6, done_char_7, done_char_8, done_char_9;
+    reg done_char_10, done_char_11, done_char_12, done_char_13;
+    
+    // Final vector pixels
+    reg final_vec_char_0, final_vec_char_1, final_vec_char_2, final_vec_char_3;
+    reg [3:0] v_new_digit_0, v_new_digit_1, v_new_digit_2, v_new_digit_3;
+    
+    // Label pixels
+    reg matrix_row_label_pix, matrix_col_label_pix;
+    reg [1:0] label_row_idx, label_col_idx;
+    reg in_matrix_label_row, in_matrix_label_col;
+    
+    always @(*) begin
+        // State name characters
+        banner_char_0 = pixel_in_char(10, 5, (state_edit ? 4'd4 : (state_running ? 4'd7 : 4'd3)), px, py);
+        banner_char_1 = pixel_in_char(18, 5, (state_edit ? 4'd3 : (state_running ? 4'd2 : 4'd0)), px, py);
+        banner_char_2 = pixel_in_char(26, 5, (state_edit ? 4'd8 : (state_running ? 4'd0 : 4'd3)), px, py);
+        banner_char_3 = pixel_in_char(34, 5, (state_edit ? 4'd9 : (state_running ? 4'd7 : 4'd4)), px, py);
+        banner_char_4 = state_running ? pixel_in_char(42, 5, 4'd7, px, py) : 1'b0;
+        banner_char_5 = state_running ? pixel_in_char(50, 5, 4'd6, px, py) : 1'b0;
+        banner_char_6 = state_done ? pixel_in_char(42, 5, 4'd3, px, py) : 1'b0;
+        banner_char_7 = state_done ? pixel_in_char(50, 5, 4'd0, px, py) : 1'b0;
+        banner_char_8 = state_done ? pixel_in_char(58, 5, 4'd3, px, py) : 1'b0;
+        banner_char_9 = state_done ? pixel_in_char(66, 5, 4'd4, px, py) : 1'b0;
+        
+        // Iteration count
+        banner_char_i = pixel_in_char(100, 5, 4'd8, px, py);
+        banner_char_t = pixel_in_char(108, 5, 4'd9, px, py);
+        banner_char_e = pixel_in_char(116, 5, 4'd4, px, py);
+        banner_char_r = pixel_in_char(124, 5, 4'd7, px, py);
+        banner_char_colon = pixel_in_char(132, 5, 4'd0, px, py);
+        banner_char_iter_tens = pixel_in_char(140, 5, iter_tens, px, py);
+        banner_char_iter_ones = pixel_in_char(148, 5, iter_ones, px, py);
+        
+        // Epsilon
+        banner_char_eps_e = pixel_in_char(200, 5, 4'd4, px, py);
+        banner_char_eps_p = pixel_in_char(208, 5, 4'd7, px, py);
+        banner_char_eps_s = pixel_in_char(216, 5, 4'd8, px, py);
+        banner_char_eps_eq = pixel_in_char(224, 5, 4'd0, px, py);
+        banner_char_eps_val = pixel_in_char(232, 5, eps_val, px, py);
+        
+        // Done message
+        done_char_0 = pixel_in_char(250, 200, 4'd3, px, py);
+        done_char_1 = pixel_in_char(258, 200, 4'd0, px, py);
+        done_char_2 = pixel_in_char(266, 200, 4'd3, px, py);
+        done_char_3 = pixel_in_char(274, 200, 4'd4, px, py);
+        done_char_4 = pixel_in_char(290, 200, 4'd0, px, py);
+        done_char_5 = pixel_in_char(298, 200, 4'd4, px, py);
+        done_char_6 = pixel_in_char(306, 200, 4'd8, px, py);
+        done_char_7 = pixel_in_char(314, 200, 4'd4, px, py);
+        done_char_8 = pixel_in_char(322, 200, 4'd6, px, py);
+        done_char_9 = pixel_in_char(330, 200, 4'd4, px, py);
+        done_char_10 = pixel_in_char(338, 200, 4'd3, px, py);
+        done_char_11 = pixel_in_char(346, 200, 4'd7, px, py);
+        done_char_12 = pixel_in_char(354, 200, 4'd4, px, py);
+        done_char_13 = pixel_in_char(362, 200, 4'd7, px, py);
+        
+        // Final vector
+        v_new_digit_0 = v_new_unpack[0][3:0];
+        v_new_digit_1 = v_new_unpack[1][3:0];
+        v_new_digit_2 = v_new_unpack[2][3:0];
+        v_new_digit_3 = v_new_unpack[3][3:0];
+        final_vec_char_0 = pixel_in_char(250 + 0*16, 260, v_new_digit_0, px, py);
+        final_vec_char_1 = pixel_in_char(250 + 1*16, 260, v_new_digit_1, px, py);
+        final_vec_char_2 = pixel_in_char(250 + 2*16, 260, v_new_digit_2, px, py);
+        final_vec_char_3 = pixel_in_char(250 + 3*16, 260, v_new_digit_3, px, py);
+        
+        // Matrix labels
+        label_row_idx = (py - MATRIX_Y) / CELL_SIZE;
+        label_col_idx = (px - MATRIX_X) / CELL_SIZE;
+        in_matrix_label_row = (px >= MATRIX_X - 15) && (px < MATRIX_X) &&
+                              (py >= MATRIX_Y) && (py < MATRIX_Y + 4*CELL_SIZE);
+        in_matrix_label_col = (px >= MATRIX_X) && (px < MATRIX_X + 4*CELL_SIZE) &&
+                              (py >= MATRIX_Y - 15) && (py < MATRIX_Y);
+        matrix_row_label_pix = in_matrix_label_row && pixel_in_char(MATRIX_X - 12, MATRIX_Y + label_row_idx * CELL_SIZE + 10, {2'b0, label_row_idx}, px, py);
+        matrix_col_label_pix = in_matrix_label_col && pixel_in_char(MATRIX_X + label_col_idx * CELL_SIZE + 10, MATRIX_Y - 12, {2'b0, label_col_idx}, px, py);
+    end
+    
+    // Combine banner text pixels
+    wire banner_text = banner_char_0 || banner_char_1 || banner_char_2 || banner_char_3 ||
+                      banner_char_4 || banner_char_5 || banner_char_6 || banner_char_7 ||
+                      banner_char_8 || banner_char_9 ||
+                      banner_char_i || banner_char_t || banner_char_e || banner_char_r ||
+                      banner_char_colon || banner_char_iter_tens || banner_char_iter_ones ||
+                      banner_char_eps_e || banner_char_eps_p || banner_char_eps_s ||
+                      banner_char_eps_eq || banner_char_eps_val;
+    
+    // Combine done text pixels
+    wire in_done_msg = (px >= 250) && (px < 400) && (py >= 200) && (py < 250) && state_done;
+    wire done_text = in_done_msg && (done_char_0 || done_char_1 || done_char_2 || done_char_3 ||
+                                     done_char_4 || done_char_5 || done_char_6 || done_char_7 ||
+                                     done_char_8 || done_char_9 || done_char_10 || done_char_11 ||
+                                     done_char_12 || done_char_13);
+    
+    // Combine final vector text pixels
+    wire in_final_vec = (px >= 250) && (px < 400) && (py >= 260) && (py < 320) && state_done;
+    wire final_vec_text = in_final_vec && (final_vec_char_0 || final_vec_char_1 || final_vec_char_2 || final_vec_char_3);
     
     // Matrix cell borders and labels
     wire matrix_border = in_matrix && (
@@ -450,17 +545,9 @@ module display_controller (
                          (vector_cell_x < 1) || (vector_cell_x >= CELL_SIZE - 1) ||
                          (vector_cell_y < 1) || (vector_cell_y >= CELL_SIZE - 1));
     
-    // Row/column labels (simple numbers 0-3)
-    wire in_matrix_label_row = (px >= MATRIX_X - 15) && (px < MATRIX_X) &&
-                                (py >= MATRIX_Y) && (py < MATRIX_Y + 4*CELL_SIZE);
-    wire in_matrix_label_col = (px >= MATRIX_X) && (px < MATRIX_X + 4*CELL_SIZE) &&
-                               (py >= MATRIX_Y - 15) && (py < MATRIX_Y);
-    wire [1:0] label_row_idx = (py - MATRIX_Y) / CELL_SIZE;
-    wire [1:0] label_col_idx = (px - MATRIX_X) / CELL_SIZE;
-    wire matrix_row_label = in_matrix_label_row && pixel_in_char(MATRIX_X - 12, MATRIX_Y + label_row_idx * CELL_SIZE + 10, {2'b0, label_row_idx}, px, py);
-    wire matrix_col_label = in_matrix_label_col && pixel_in_char(MATRIX_X + label_col_idx * CELL_SIZE + 10, MATRIX_Y - 12, {2'b0, label_col_idx}, px, py);
-    
-    // Cell value rendering (use block_digit_renderer for ones digit)
+    // ========================================================================
+    // BLOCK 3: Compute digit pixel signals
+    // ========================================================================
     wire matrix_digit_pixel, vector_digit_pixel;
     block_digit_renderer #(.DIGIT_WIDTH(20), .DIGIT_HEIGHT(30)) matrix_digit (
         .digit(matrix_ones),
@@ -488,39 +575,9 @@ module display_controller (
                           (vector_cell_x >= 5) && (vector_cell_x < 8) &&
                           (vector_cell_y >= 15) && (vector_cell_y < 17);
     
-    // DONE state message
-    wire in_done_msg = (px >= 250) && (px < 400) && (py >= 200) && (py < 250) && state_done;
-    wire done_text = in_done_msg && (
-                     pixel_in_char(250, 200, 4'd3, px, py) || // D
-                     pixel_in_char(258, 200, 4'd0, px, py) || // O
-                     pixel_in_char(266, 200, 4'd3, px, py) || // N
-                     pixel_in_char(274, 200, 4'd4, px, py) || // E
-                     pixel_in_char(290, 200, 4'd0, px, py) || // 0 (dash placeholder)
-                     pixel_in_char(298, 200, 4'd4, px, py) || // E
-                     pixel_in_char(306, 200, 4'd8, px, py) || // i
-                     pixel_in_char(314, 200, 4'd4, px, py) || // e
-                     pixel_in_char(322, 200, 4'd6, px, py) || // g
-                     pixel_in_char(330, 200, 4'd4, px, py) || // e
-                     pixel_in_char(338, 200, 4'd3, px, py) || // n
-                     pixel_in_char(346, 200, 4'd7, px, py) || // v
-                     pixel_in_char(354, 200, 4'd4, px, py) || // e
-                     pixel_in_char(362, 200, 4'd7, px, py)); // r
-    
-    // Final vector display in DONE state
-    wire [3:0] v_new_digit [0:3];
-    assign v_new_digit[0] = v_new_unpack[0][3:0];
-    assign v_new_digit[1] = v_new_unpack[1][3:0];
-    assign v_new_digit[2] = v_new_unpack[2][3:0];
-    assign v_new_digit[3] = v_new_unpack[3][3:0];
-    
-    wire in_final_vec = (px >= 250) && (px < 400) && (py >= 260) && (py < 320) && state_done;
-    wire final_vec_text = in_final_vec && (
-                          pixel_in_char(250 + 0*16, 260, v_new_digit[0], px, py) ||
-                          pixel_in_char(250 + 1*16, 260, v_new_digit[1], px, py) ||
-                          pixel_in_char(250 + 2*16, 260, v_new_digit[2], px, py) ||
-                          pixel_in_char(250 + 3*16, 260, v_new_digit[3], px, py));
-    
-    // Main color assignment
+    // ========================================================================
+    // BLOCK 4: Simple RGB assignment using only precomputed wires
+    // ========================================================================
     always @(*) begin
         if (!visible) begin
             red = 4'b0000;
@@ -542,7 +599,7 @@ module display_controller (
             red = 4'b1111;
             green = 4'b1111;
             blue = 4'b0000;
-        end else if (matrix_border || vector_border || matrix_row_label || matrix_col_label) begin
+        end else if (matrix_border || vector_border || matrix_row_label_pix || matrix_col_label_pix) begin
             // Borders and labels: white
             red = 4'b1111;
             green = 4'b1111;
