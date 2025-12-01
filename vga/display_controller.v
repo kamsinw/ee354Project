@@ -401,11 +401,13 @@ module display_controller (
         input [9:0] px, py;
         reg [2:0] char_line_idx;
         reg [2:0] char_col_idx;
+        reg [7:0] char_line_result;
         begin
             if ((px >= char_x) && (px < char_x + 8) && (py >= char_y) && (py < char_y + 8)) begin
                 char_line_idx = py - char_y;
                 char_col_idx = px - char_x;
-                pixel_in_char = char_line(char_code, char_line_idx)[7 - char_col_idx];
+                char_line_result = char_line(char_code, char_line_idx);
+                pixel_in_char = char_line_result[7 - char_col_idx];
             end else begin
                 pixel_in_char = 1'b0;
             end
@@ -505,12 +507,18 @@ module display_controller (
                      pixel_in_char(362, 200, 4'd7, px, py)); // r
     
     // Final vector display in DONE state
+    wire [3:0] v_new_digit [0:3];
+    assign v_new_digit[0] = v_new_unpack[0][3:0];
+    assign v_new_digit[1] = v_new_unpack[1][3:0];
+    assign v_new_digit[2] = v_new_unpack[2][3:0];
+    assign v_new_digit[3] = v_new_unpack[3][3:0];
+    
     wire in_final_vec = (px >= 250) && (px < 400) && (py >= 260) && (py < 320) && state_done;
     wire final_vec_text = in_final_vec && (
-                          pixel_in_char(250 + 0*16, 260, v_new_unpack[0][3:0], px, py) ||
-                          pixel_in_char(250 + 1*16, 260, v_new_unpack[1][3:0], px, py) ||
-                          pixel_in_char(250 + 2*16, 260, v_new_unpack[2][3:0], px, py) ||
-                          pixel_in_char(250 + 3*16, 260, v_new_unpack[3][3:0], px, py));
+                          pixel_in_char(250 + 0*16, 260, v_new_digit[0], px, py) ||
+                          pixel_in_char(250 + 1*16, 260, v_new_digit[1], px, py) ||
+                          pixel_in_char(250 + 2*16, 260, v_new_digit[2], px, py) ||
+                          pixel_in_char(250 + 3*16, 260, v_new_digit[3], px, py));
     
     // Main color assignment
     always @(*) begin
