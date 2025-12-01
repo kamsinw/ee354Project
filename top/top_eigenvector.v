@@ -79,10 +79,11 @@ module top_eigenvector (
     reg signed [15:0] vector_v [0:3];
     
     // Next-state logic for edit_row and edit_col (combinational)
-    // This block ONLY computes next state - reset is handled in sequential block
-    wire [1:0] next_edit_row;
-    wire [1:0] next_edit_col;
+    // MUST be declared as reg since assigned in always block
+    reg [1:0] next_edit_row;
+    reg [1:0] next_edit_col;
     
+    // SINGLE always @(*) block for next-state computation
     always @(*) begin
         // Default: keep current values
         next_edit_row = edit_row;
