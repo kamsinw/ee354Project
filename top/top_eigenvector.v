@@ -83,7 +83,12 @@ module top_eigenvector (
     reg [1:0] next_edit_row;
     reg [1:0] next_edit_col;
     
-    // SINGLE always @(*) block for next-state computation
+    // Next-state logic for matrix_a and vector_v (combinational)
+    // MUST be declared as reg arrays since assigned in always block
+    reg signed [15:0] next_matrix_a [0:3][0:3];
+    reg signed [15:0] next_vector_v [0:3];
+    
+    // SINGLE always @(*) block for next-state computation (edit_row/edit_col)
     always @(*) begin
         // Default: keep current values
         next_edit_row = edit_row;
@@ -111,15 +116,34 @@ module top_eigenvector (
         // In run mode (sw0 == 1), keep current values (already set as default)
     end
     
+    // SINGLE always @(*) block for next-state computation (matrix_a/vector_v)
     integer i, j;
-    always @(posedge clk) begin
+    always @(*) begin
+        // Default: keep all current values
+        for (i = 0; i < 4; i = i + 1) begin
+            for (j = 0; j < 4; j = j + 1) begin
+                next_matrix_a[i][j] = matrix_a[i][j];
+            end
+            next_vector_v[i] = vector_v[i];
+        end
+        
         if (reset) begin
-            matrix_a[0][0] <= 16'sd4; matrix_a[0][1] <= 16'sd1; matrix_a[0][2] <= 16'sd1; matrix_a[0][3] <= 16'sd1;
-            matrix_a[1][0] <= 16'sd1; matrix_a[1][1] <= 16'sd4; matrix_a[1][2] <= 16'sd1; matrix_a[1][3] <= 16'sd1;
-            matrix_a[2][0] <= 16'sd1; matrix_a[2][1] <= 16'sd1; matrix_a[2][2] <= 16'sd4; matrix_a[2][3] <= 16'sd1;
-            matrix_a[3][0] <= 16'sd1; matrix_a[3][1] <= 16'sd1; matrix_a[3][2] <= 16'sd1; matrix_a[3][3] <= 16'sd4;
+            // Initialize on reset
+            next_matrix_a[0][0] = 16'sd4; next_matrix_a[0][1] = 16'sd1; next_matrix_a[0][2] = 16'sd1; next_matrix_a[0][3] = 16'sd1;
+            next_matrix_a[1][0] = 16'sd1; next_matrix_a[1][1] = 16'sd4; next_matrix_a[1][2] = 16'sd1; next_matrix_a[1][3] = 16'sd1;
+            next_matrix_a[2][0] = 16'sd1; next_matrix_a[2][1] = 16'sd1; next_matrix_a[2][2] = 16'sd4; next_matrix_a[2][3] = 16'sd1;
+            next_matrix_a[3][0] = 16'sd1; next_matrix_a[3][1] = 16'sd1; next_matrix_a[3][2] = 16'sd1; next_matrix_a[3][3] = 16'sd4;
             for (i = 0; i < 4; i = i + 1) begin
-                vector_v[i] <= 16'sd1;
+                next_vector_v[i] = 16'sd1;
+            end
+        end else if (~sw0 && btnc_pulse) begin
+            // Edit mode: update the edited cell
+            if (sw1 == 1'b0) begin
+                // Edit matrix
+                next_matrix_a[edit_row][edit_col] = edit_val;
+            end else begin
+                // Edit vector
+                next_vector_v[edit_row] = edit_val;
             end
         end
     end
@@ -177,13 +201,16 @@ module top_eigenvector (
         end
     end
     
+    // SINGLE always block for matrix_a and vector_v state update
+    // Updates from next_matrix_a/next_vector_v (which handles reset, edit mode, etc.)
+    integer k, l;
     always @(posedge clk) begin
-        if (~sw0 && btnc_pulse) begin
-            if (sw1 == 1'b0) begin
-                matrix_a[edit_row][edit_col] <= edit_val;
-            end else begin
-                vector_v[edit_row] <= edit_val;
+        // Update all elements from next-state (next-state logic handles reset and edits)
+        for (k = 0; k < 4; k = k + 1) begin
+            for (l = 0; l < 4; l = l + 1) begin
+                matrix_a[k][l] <= next_matrix_a[k][l];
             end
+            vector_v[k] <= next_vector_v[k];
         end
     end
     
