@@ -88,6 +88,10 @@ module top_eigenvector (
     reg signed [15:0] next_matrix_a [0:3][0:3];
     reg signed [15:0] next_vector_v [0:3];
     
+    // Next-state logic for edit_val (combinational)
+    // MUST be declared as reg since assigned in always block
+    reg signed [15:0] next_edit_val;
+    
     // SINGLE always @(*) block for next-state computation (edit_row/edit_col)
     always @(*) begin
         // Default: keep current values
@@ -159,19 +163,6 @@ module top_eigenvector (
         end
     end
     
-    // edit_val updates (separate from edit_row/edit_col)
-    always @(posedge clk_1k) begin
-        if (reset) begin
-            edit_val <= 16'sd0;
-        end else if (~sw0) begin
-            if (btnl_pulse) begin
-                edit_val <= edit_val - 16'sd1;
-            end else if (btnr_pulse) begin
-                edit_val <= edit_val + 16'sd1;
-            end
-        end
-    end
-    
     reg sw0_prev, sw1_prev;
     reg [1:0] edit_row_prev;
     
@@ -187,18 +178,34 @@ module top_eigenvector (
         end
     end
     
-    always @(posedge clk) begin
+    // SINGLE always @(*) block for next_edit_val computation
+    always @(*) begin
+        // Default: keep current value
+        next_edit_val = edit_val;
+        
         if (reset) begin
-            edit_val <= 16'sd0;
+            next_edit_val = 16'sd0;
         end else if (~sw0) begin
-            if ((sw0_prev & ~sw0) || (sw1_prev != sw1) || (edit_row_prev != edit_row)) begin
+            // Check for button pulses (increment/decrement)
+            if (btnl_pulse) begin
+                next_edit_val = edit_val - 16'sd1;
+            end else if (btnr_pulse) begin
+                next_edit_val = edit_val + 16'sd1;
+            end
+            // Check for mode/row/col changes (load from matrix/vector)
+            else if ((sw0_prev & ~sw0) || (sw1_prev != sw1) || (edit_row_prev != edit_row)) begin
                 if (sw1 == 1'b0) begin
-                    edit_val <= matrix_a[edit_row][edit_col];
+                    next_edit_val = matrix_a[edit_row][edit_col];
                 end else begin
-                    edit_val <= vector_v[edit_row];
+                    next_edit_val = vector_v[edit_row];
                 end
             end
         end
+    end
+    
+    // SINGLE always @(posedge clk) block for edit_val state update
+    always @(posedge clk) begin
+        edit_val <= next_edit_val;
     end
     
     // SINGLE always block for matrix_a and vector_v state update
