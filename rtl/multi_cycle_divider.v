@@ -51,7 +51,7 @@ module multi_cycle_divider #(
             dividend_shift_reg <= {WIDTH_DIVIDEND{1'b0}};
             quotient_reg <= {WIDTH_QUOTIENT{1'b0}};
             remainder <= {(WIDTH_DIVISOR+1){1'b0}};
-            bit_count <= {(WIDTH_QUOTIENT+1){1'b0}};
+            bit_count <= 0;
             dividend_sign <= 1'b0;
             divisor_sign <= 1'b0;
             quotient <= {WIDTH_QUOTIENT{1'b0}};
@@ -119,6 +119,11 @@ module multi_cycle_divider #(
                 DONE_ST: begin
                     done <= 1'b1;
                     state <= IDLE;
+                end
+                
+                default: begin
+                    state <= IDLE;
+                    done <= 1'b0;
                 end
             endcase
         end

@@ -115,6 +115,9 @@ module matrix_vector_mult (
                             sum_pair3_1 <= prod3_2[23:0] + prod3_3[23:0];
                             add_stage <= 2'b01;
                         end
+                        default: begin
+                            add_stage <= 2'b00;
+                        end
                     endcase
                 end
                 2'b01: begin
@@ -135,6 +138,9 @@ module matrix_vector_mult (
                         2'b11: begin
                             sum3 <= sum_pair3_0 + sum_pair3_1;
                             add_stage <= 2'b10;
+                        end
+                        default: begin
+                            add_stage <= 2'b00;
                         end
                     endcase
                 end
@@ -169,7 +175,17 @@ module matrix_vector_mult (
                             end
                             add_stage <= 2'b00;
                         end
+                        default: begin
+                            // Invalid row state
+                            add_stage <= 2'b00;
+                            done <= 1'b0;
+                        end
                     endcase
+                end
+                default: begin
+                    // Invalid add_stage state
+                    add_stage <= 2'b00;
+                    done <= 1'b0;
                 end
             endcase
         end
