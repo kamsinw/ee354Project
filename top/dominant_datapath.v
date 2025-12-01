@@ -20,7 +20,11 @@ module dominant_datapath (
     output wire signed [15:0] v0,
     output wire signed [15:0] v1,
     output wire signed [15:0] v2,
-    output wire signed [15:0] v3
+    output wire signed [15:0] v3,
+    output wire signed [15:0] v_old0,
+    output wire signed [15:0] v_old1,
+    output wire signed [15:0] v_old2,
+    output wire signed [15:0] v_old3
 );
 
     wire signed [16*16-1:0] A;
@@ -99,5 +103,10 @@ module dominant_datapath (
     assign v1 = v_new[31:16];
     assign v2 = v_new[47:32];
     assign v3 = v_new[63:48];
+    
+    assign v_old0 = v_old[15:0];
+    assign v_old1 = v_old[31:16];
+    assign v_old2 = v_old[47:32];
+    assign v_old3 = v_old[63:48];
 
 endmodule

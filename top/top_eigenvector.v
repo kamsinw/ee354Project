@@ -231,6 +231,12 @@ module top_eigenvector (
     wire mul_done, scale_done, diff_done;
     wire signed [15:0] max_d_out;
     wire signed [63:0] v_out;
+    wire [6:0] fsm_state;
+    wire signed [15:0] v_old0, v_old1, v_old2, v_old3;
+    
+    // Iteration counter
+    reg [7:0] iteration_count;
+    reg load_v_old_prev;
     
     reg sw0_r;
     wire sw0_edge;
@@ -238,8 +244,19 @@ module top_eigenvector (
     always @(posedge clk) begin
         if (reset_internal) begin
             sw0_r <= 1'b0;
+            iteration_count <= 8'd0;
+            load_v_old_prev <= 1'b0;
         end else begin
             sw0_r <= sw0;
+            load_v_old_prev <= load_v_old;
+            // Count iterations: increment when load_v_old transitions from 0 to 1
+            if (load_v_old && !load_v_old_prev) begin
+                iteration_count <= iteration_count + 1'b1;
+            end
+            // Reset counter when starting new computation
+            if (sw0_edge) begin
+                iteration_count <= 8'd0;
+            end
         end
     end
     
@@ -260,7 +277,8 @@ module top_eigenvector (
         .start_mult(start_mult),
         .start_scale(start_scale),
         .start_diff(start_diff),
-        .done(fsm_done)
+        .done(fsm_done),
+        .state_out(fsm_state)
     );
     
     dominant_datapath datapath_inst (
@@ -295,7 +313,11 @@ module top_eigenvector (
         .v0(v_out[15:0]),
         .v1(v_out[31:16]),
         .v2(v_out[47:32]),
-        .v3(v_out[63:48])
+        .v3(v_out[63:48]),
+        .v_old0(v_old0),
+        .v_old1(v_old1),
+        .v_old2(v_old2),
+        .v_old3(v_old3)
     );
     
     assign led[0] = fsm_done;
@@ -324,6 +346,9 @@ module top_eigenvector (
     wire signed [4*16-1:0] vector_v_packed;
     assign vector_v_packed = {vector_v[3], vector_v[2], vector_v[1], vector_v[0]};
 
+    wire signed [63:0] v_old_packed = {v_old3, v_old2, v_old1, v_old0};
+    wire signed [63:0] v_new_packed = v_out;
+    
     vga_top vga_display (
         .clk_100mhz(clk),
         .reset(reset_internal),
@@ -331,8 +356,14 @@ module top_eigenvector (
         .edit_col(edit_col),
         .sw0(sw0),
         .sw1(sw1),
+        .sw_eps(sw_eps),
         .matrix_a(matrix_a_packed),
         .vector_v(vector_v_packed),
+        .fsm_state(fsm_state),
+        .fsm_done(fsm_done),
+        .iteration_count(iteration_count),
+        .v_old(v_old_packed),
+        .v_new(v_new_packed),
         .vga_hsync(vga_hsync),
         .vga_vsync(vga_vsync),
         .vga_red(vga_red),

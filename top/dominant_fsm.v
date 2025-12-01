@@ -16,7 +16,8 @@ module dominant_fsm (
     output reg         start_mult,
     output reg         start_scale,
     output reg         start_diff,
-    output reg         done
+    output reg         done,
+    output wire [6:0]  state_out
 );
 
     localparam IDLE     = 7'b0000001;
@@ -31,6 +32,8 @@ module dominant_fsm (
     reg start_mult_reg, start_scale_reg, start_diff_reg;
     
     wire [15:0] eps16 = {13'b0, epsilon};
+    
+    assign state_out = state;
 
     always @(posedge clk) begin
         if (reset) begin
