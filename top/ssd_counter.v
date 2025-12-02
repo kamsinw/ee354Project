@@ -1,31 +1,30 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Module Name:    ssd_counter
-// Description:    Seven-segment display counter with scanning
-//                 Renamed from 'counter' to avoid conflict with VGA counter
-//////////////////////////////////////////////////////////////////////////////////
-module ssd_counter(
-    input clk,
-    input [15:0] displayNumberLow,
-    input [15:0] displayNumberHigh,
-    output reg [7:0] anode,
-    output reg [6:0] ssdOut
+
+module ssd_counter (
+    input  wire        clk,
+    input  wire [15:0] displayNumberLow,
+    input  wire [15:0] displayNumberHigh,
+    output reg  [7:0]  anode,
+    output reg  [6:0]  ssdOut
 );
 
-    reg [20:0] refresh;
-    reg [3:0] LEDNumber;
-    wire [2:0] LEDCounter;
+    reg [20:0] refresh_q;
+    reg [3:0]  active_digit_q;
+    wire [2:0] scan_idx = refresh_q[20:18];
 
-    // Registered BCD digits for lower and upper displays
-    reg [3:0] digit_low3, digit_low2, digit_low1, digit_low0;
-    reg [3:0] digit_high3, digit_high2, digit_high1, digit_high0;
+    reg [3:0] digit_low3_q;
+    reg [3:0] digit_low2_q;
+    reg [3:0] digit_low1_q;
+    reg [3:0] digit_low0_q;
 
-    reg [15:0] clamped_value_low;
-    reg [15:0] clamped_value_high;
-    reg [19:0] bcd_digits_low;
-    reg [19:0] bcd_digits_high;
+    reg [3:0] digit_high3_q;
+    reg [3:0] digit_high2_q;
+    reg [3:0] digit_high1_q;
+    reg [3:0] digit_high0_q;
 
-    // 16-bit to BCD (shift-add-3) helper
+    reg [19:0] low_bcd;
+    reg [19:0] high_bcd;
+
     function [19:0] bin16_to_bcd;
         input [15:0] value;
         integer idx;
@@ -44,83 +43,64 @@ module ssd_counter(
         end
     endfunction
 
-    // Initialize refresh counter to zero
-    initial begin
-        refresh = 21'd0;
+    always @(posedge clk) begin
+        refresh_q <= refresh_q + 21'd1;
     end
 
-    // Refresh counter for multiplexing
     always @(posedge clk) begin
-        refresh <= refresh + 21'd1;
-    end
-    assign LEDCounter = refresh[20:18];
+        low_bcd  <= bin16_to_bcd(displayNumberLow);
+        high_bcd <= bin16_to_bcd(displayNumberHigh);
 
-    // Update the BCD digits once per clock
-    always @(posedge clk) begin
-        if (displayNumberLow > 16'd9999) begin
-            clamped_value_low = 16'd9999;
-        end else begin
-            clamped_value_low = displayNumberLow;
-        end
-        bcd_digits_low = bin16_to_bcd(clamped_value_low);
-        digit_low3 <= bcd_digits_low[15:12];
-        digit_low2 <= bcd_digits_low[11:8];
-        digit_low1 <= bcd_digits_low[7:4];
-        digit_low0 <= bcd_digits_low[3:0];
+        digit_low3_q  <= low_bcd[15:12];
+        digit_low2_q  <= low_bcd[11:8];
+        digit_low1_q  <= low_bcd[7:4];
+        digit_low0_q  <= low_bcd[3:0];
 
-        if (displayNumberHigh > 16'd9999) begin
-            clamped_value_high = 16'd9999;
-        end else begin
-            clamped_value_high = displayNumberHigh;
-        end
-        bcd_digits_high = bin16_to_bcd(clamped_value_high);
-        digit_high3 <= bcd_digits_high[15:12];
-        digit_high2 <= bcd_digits_high[11:8];
-        digit_high1 <= bcd_digits_high[7:4];
-        digit_high0 <= bcd_digits_high[3:0];
+        digit_high3_q <= high_bcd[15:12];
+        digit_high2_q <= high_bcd[11:8];
+        digit_high1_q <= high_bcd[7:4];
+        digit_high0_q <= high_bcd[3:0];
     end
 
-    // Register the anode and digit selection
     always @(posedge clk) begin
-        case (LEDCounter)
+        case (scan_idx)
             3'd0: begin
-                anode <= 8'b0111_1111;
-                LEDNumber <= digit_high3;
+                anode         <= 8'b0111_1111;
+                active_digit_q <= digit_high3_q;
             end
             3'd1: begin
-                anode <= 8'b1011_1111;
-                LEDNumber <= digit_high2;
+                anode         <= 8'b1011_1111;
+                active_digit_q <= digit_high2_q;
             end
             3'd2: begin
-                anode <= 8'b1101_1111;
-                LEDNumber <= digit_high1;
+                anode         <= 8'b1101_1111;
+                active_digit_q <= digit_high1_q;
             end
             3'd3: begin
-                anode <= 8'b1110_1111;
-                LEDNumber <= digit_high0;
+                anode         <= 8'b1110_1111;
+                active_digit_q <= digit_high0_q;
             end
             3'd4: begin
-                anode <= 8'b1111_0111;
-                LEDNumber <= digit_low3;
+                anode         <= 8'b1111_0111;
+                active_digit_q <= digit_low3_q;
             end
             3'd5: begin
-                anode <= 8'b1111_1011;
-                LEDNumber <= digit_low2;
+                anode         <= 8'b1111_1011;
+                active_digit_q <= digit_low2_q;
             end
             3'd6: begin
-                anode <= 8'b1111_1101;
-                LEDNumber <= digit_low1;
+                anode         <= 8'b1111_1101;
+                active_digit_q <= digit_low1_q;
             end
-            3'd7: begin
-                anode <= 8'b1111_1110;
-                LEDNumber <= digit_low0;
+            default: begin
+                anode         <= 8'b1111_1110;
+                active_digit_q <= digit_low0_q;
             end
         endcase
     end
 
-    // Register the segment output for clean display
     always @(posedge clk) begin
-        case (LEDNumber)
+        case (active_digit_q)
             4'b0000: ssdOut <= 7'b0000001;
             4'b0001: ssdOut <= 7'b1001111;
             4'b0010: ssdOut <= 7'b0010010;

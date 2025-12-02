@@ -31,9 +31,9 @@ module tb_abs_diff;
 	// ========================================
 	
 	abs_diff #(.WIDTH(WIDTH)) uut (
-		.a(a),
-		.b(b),
-		.diff(diff)
+		.vec_new (a),
+		.vec_old (b),
+		.vec_diff(diff)
 	);
 	
 	// Unpack signals

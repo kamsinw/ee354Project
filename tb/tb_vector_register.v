@@ -35,8 +35,8 @@ module tb_vector_register;
 		.clk(clk),
 		.reset(reset),
 		.load(load),
-		.in(in),
-		.out(out)
+		.vec_in(in),
+		.vec_out(out)
 	);
 	
 	// Unpack signals

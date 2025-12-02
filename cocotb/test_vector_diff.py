@@ -23,12 +23,12 @@ async def test_vector_diff(dut):
     await RisingEdge(dut.clk)
     dut.reset.value = 0
     
-    lane_width = len(dut.V_new.value) // 4
+    lane_width = len(dut.vec_new.value) // 4
     vec_new = [5, 6, 7, 8]
     vec_old = [1, 2, 3, 4]
     
-    dut.V_new.value = pack_vector(vec_new, lane_width)
-    dut.V_old.value = pack_vector(vec_old, lane_width)
+    dut.vec_new.value = pack_vector(vec_new, lane_width)
+    dut.vec_old.value = pack_vector(vec_old, lane_width)
     
     dut.start.value = 1
     await RisingEdge(dut.clk)

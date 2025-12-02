@@ -1,219 +1,184 @@
 `timescale 1ns / 1ps
 
 module dominant_fsm (
-    input  wire        clk,
-    input  wire        reset,
-    input  wire        start,
-    
-    input  wire        mul_done,
-    input  wire        scale_done,
-    input  wire        diff_done,
-    input  wire        [3:0]  max_d_in,
+    input  wire       clk,
+    input  wire       reset,
+    input  wire       start,
+    input  wire       mul_done,
+    input  wire       scale_done,
+    input  wire       diff_done,
+    input  wire [3:0] max_d_in,
     input  wire [2:0] epsilon,
-    output reg         load_v_old,
-    output reg         load_y,
-    output reg         load_max_d,
-    output reg         start_mult,
-    output reg         start_scale,
-    output reg         start_diff,
-    output reg         done,
-    output wire [7:0]  state_out
+    output reg        load_v_old,
+    output reg        load_y,
+    output reg        load_max_d,
+    output reg        start_mult,
+    output reg        start_scale,
+    output reg        start_diff,
+    output reg        done,
+    output wire [7:0] state_out
 );
 
-    localparam IDLE     = 8'b00000001;
-    localparam LOAD     = 8'b00000010;
-    localparam MULT     = 8'b00000100;
-    localparam WAIT_MAX = 8'b00001000;  // Wait for max_finder pipeline
-    localparam SCALE    = 8'b00010000;
-    localparam DIFF     = 8'b00100000;
-    localparam CHECK    = 8'b01000000;
-    localparam DONE_ST  = 8'b10000000;
+    localparam [7:0] IDLE     = 8'b0000_0001;
+    localparam [7:0] LOAD     = 8'b0000_0010;
+    localparam [7:0] MULT     = 8'b0000_0100;
+    localparam [7:0] WAIT_MAX = 8'b0000_1000;
+    localparam [7:0] SCALE    = 8'b0001_0000;
+    localparam [7:0] DIFF     = 8'b0010_0000;
+    localparam [7:0] CHECK    = 8'b0100_0000;
+    localparam [7:0] DONE_ST  = 8'b1000_0000;
 
-    reg [7:0] state;
-    reg start_mult_reg, start_scale_reg, start_diff_reg;
-    reg [1:0] wait_max_count;
-    reg [3:0] iteration_count;
-    reg       start_prev;
-    
     localparam [3:0] MIN_ITERATIONS = 4'd3;
+
+    reg [7:0] state_q;
+    reg [7:0] state_d;
+
+    reg [1:0] wait_max_q;
+    reg [1:0] wait_max_d;
+
+    reg [3:0] iter_q;
+    reg [3:0] iter_d;
+
+    reg       mult_busy_q;
+    reg       mult_busy_d;
+
+    reg       scale_busy_q;
+    reg       scale_busy_d;
+
+    reg       diff_busy_q;
+    reg       diff_busy_d;
+
+    reg       start_prev_q;
+
     wire [3:0] epsilon_threshold = {1'b0, epsilon};
-    wire iterations_met = (iteration_count >= MIN_ITERATIONS);
-    wire start_rising_edge = start & ~start_prev;
-    
-    assign state_out = state;
+    wire       start_pulse       = start & ~start_prev_q;
+    wire       iterations_met    = (iter_q >= MIN_ITERATIONS);
+    wire       epsilon_met       = (max_d_in <= epsilon_threshold);
+
+    assign state_out = state_q;
+
+    always @(*) begin
+        state_d     = state_q;
+        wait_max_d  = wait_max_q;
+        iter_d      = iter_q;
+        mult_busy_d = mult_busy_q;
+        scale_busy_d = scale_busy_q;
+        diff_busy_d = diff_busy_q;
+
+        load_v_old  = 1'b0;
+        load_y      = 1'b0;
+        load_max_d  = 1'b0;
+        start_mult  = 1'b0;
+        start_scale = 1'b0;
+        start_diff  = 1'b0;
+        done        = 1'b0;
+
+        case (state_q)
+            IDLE: begin
+                iter_d       = 4'd0;
+                wait_max_d   = 2'd0;
+                mult_busy_d  = 1'b0;
+                scale_busy_d = 1'b0;
+                diff_busy_d  = 1'b0;
+                if (start_pulse) begin
+                    state_d = LOAD;
+                end
+            end
+
+            LOAD: begin
+                load_v_old = 1'b1;
+                state_d    = MULT;
+            end
+
+            MULT: begin
+                if (!mult_busy_q) begin
+                    start_mult  = 1'b1;
+                    mult_busy_d = 1'b1;
+                end
+                if (mul_done) begin
+                    load_y      = 1'b1;
+                    wait_max_d  = 2'd2;
+                    mult_busy_d = 1'b0;
+                    state_d     = WAIT_MAX;
+                end
+            end
+
+            WAIT_MAX: begin
+                if (wait_max_q != 0) begin
+                    wait_max_d = wait_max_q - 1'b1;
+                end else begin
+                    state_d = SCALE;
+                end
+                // bug:fix(ollie) WAIT_MAX assumes two-cycle max_finder latency
+            end
+
+            SCALE: begin
+                if (!scale_busy_q) begin
+                    start_scale  = 1'b1;
+                    scale_busy_d = 1'b1;
+                end
+                if (scale_done) begin
+                    scale_busy_d = 1'b0;
+                    state_d      = DIFF;
+                end
+            end
+
+            DIFF: begin
+                if (!diff_busy_q) begin
+                    start_diff  = 1'b1;
+                    diff_busy_d = 1'b1;
+                end
+                if (diff_done) begin
+                    diff_busy_d = 1'b0;
+                    load_max_d  = 1'b1;
+                    if (iter_q != 4'hF) begin
+                        iter_d = iter_q + 1'b1;
+                    end
+                    state_d = CHECK;
+                end
+            end
+
+            CHECK: begin
+                if (!iterations_met) begin
+                    state_d = LOAD;
+                end else if (epsilon_met) begin
+                    state_d = DONE_ST;
+                end else begin
+                    state_d = LOAD;
+                end
+            end
+
+            DONE_ST: begin
+                done = 1'b1;
+                if (start_pulse) begin
+                    state_d = LOAD;
+                    iter_d  = 4'd0;
+                end
+            end
+
+            default: begin
+                state_d = IDLE;
+            end
+        endcase
+    end
 
     always @(posedge clk) begin
         if (reset) begin
-            state <= IDLE;
-            load_v_old <= 1'b0;
-            load_y <= 1'b0;
-            load_max_d <= 1'b0;
-            start_mult <= 1'b0;
-            start_scale <= 1'b0;
-            start_diff <= 1'b0;
-            done <= 1'b0;
-            start_mult_reg <= 1'b0;
-            start_scale_reg <= 1'b0;
-            start_diff_reg <= 1'b0;
-            wait_max_count <= 2'd0;
-            iteration_count <= 4'd0;
-            start_prev <= 1'b0;
+            state_q      <= IDLE;
+            wait_max_q   <= 2'd0;
+            iter_q       <= 4'd0;
+            mult_busy_q  <= 1'b0;
+            scale_busy_q <= 1'b0;
+            diff_busy_q  <= 1'b0;
+            start_prev_q <= 1'b0;
         end else begin
-            start_prev <= start;
-            case (state)
-                IDLE: begin
-                    load_v_old <= 1'b0;
-                    load_y <= 1'b0;
-                    load_max_d <= 1'b0;
-                    start_mult <= 1'b0;
-                    start_scale <= 1'b0;
-                    start_diff <= 1'b0;
-                    done <= 1'b0;
-                    start_mult_reg <= 1'b0;
-                    start_scale_reg <= 1'b0;
-                    start_diff_reg <= 1'b0;
-                    iteration_count <= 4'd0;
-                    if (start_rising_edge) begin
-                        state <= LOAD;
-                    end
-                end
-
-                LOAD: begin
-                    load_v_old <= 1'b1;
-                    load_y <= 1'b0;
-                    load_max_d <= 1'b0;
-                    start_mult <= 1'b0;
-                    start_scale <= 1'b0;
-                    start_diff <= 1'b0;
-                    done <= 1'b0;
-                    start_mult_reg <= 1'b0;
-                    start_scale_reg <= 1'b0;
-                    start_diff_reg <= 1'b0;
-                    state <= MULT;
-                end
-
-                MULT: begin
-                    load_v_old <= 1'b0;
-                    load_y <= 1'b0;
-                    load_max_d <= 1'b0;
-                    start_scale <= 1'b0;
-                    start_diff <= 1'b0;
-                    done <= 1'b0;
-                    if (!start_mult_reg) begin
-                        start_mult <= 1'b1;
-                        start_mult_reg <= 1'b1;
-                    end else begin
-                        start_mult <= 1'b0;
-                    end
-                    if (mul_done) begin
-                        start_mult_reg <= 1'b0;
-                        load_y <= 1'b1;
-                        wait_max_count <= 2'd2;
-                        state <= WAIT_MAX;
-                    end
-                end
-
-                WAIT_MAX: begin
-                    // Wait 2 cycles for max_finder pipeline to settle
-                    load_v_old <= 1'b0;
-                    load_y <= 1'b0;
-                    load_max_d <= 1'b0;
-                    start_mult <= 1'b0;
-                    start_scale <= 1'b0;
-                    start_diff <= 1'b0;
-                    done <= 1'b0;
-                    if (wait_max_count != 0) begin
-                        wait_max_count <= wait_max_count - 1'b1;
-                        state <= WAIT_MAX;
-                    end else begin
-                        state <= SCALE;
-                    end
-                end
-
-                SCALE: begin
-                    load_v_old <= 1'b0;
-                    load_y <= 1'b0;
-                    load_max_d <= 1'b0;
-                    start_mult <= 1'b0;
-                    start_diff <= 1'b0;
-                    done <= 1'b0;
-                    if (!start_scale_reg) begin
-                        start_scale <= 1'b1;
-                        start_scale_reg <= 1'b1;
-                    end else begin
-                        start_scale <= 1'b0;
-                    end
-                    if (scale_done) begin
-                        start_scale_reg <= 1'b0;
-                        state <= DIFF;
-                    end
-                end
-
-                DIFF: begin
-                    load_v_old <= 1'b0;
-                    load_y <= 1'b0;
-                    load_max_d <= 1'b0;
-                    start_mult <= 1'b0;
-                    start_scale <= 1'b0;
-                    done <= 1'b0;
-                    if (!start_diff_reg) begin
-                        start_diff <= 1'b1;
-                        start_diff_reg <= 1'b1;
-                    end else begin
-                        start_diff <= 1'b0;
-                    end
-                    if (diff_done) begin
-                        start_diff_reg <= 1'b0;
-                        load_max_d <= 1'b1;
-                        if (iteration_count != 4'hF) begin
-                            iteration_count <= iteration_count + 1'b1;
-                        end
-                        state <= CHECK;
-                    end
-                end
-
-                CHECK: begin
-                    load_v_old <= 1'b0;
-                    load_y <= 1'b0;
-                    load_max_d <= 1'b0;
-                    start_mult <= 1'b0;
-                    start_scale <= 1'b0;
-                    start_diff <= 1'b0;
-                    done <= 1'b0;
-                    if (!iterations_met) begin
-                        state <= LOAD;
-                    end else if (max_d_in <= epsilon_threshold) begin
-                        state <= DONE_ST;
-                    end else begin
-                        state <= LOAD;
-                    end
-                end
-
-                DONE_ST: begin
-                    load_v_old <= 1'b0;
-                    load_y <= 1'b0;
-                    load_max_d <= 1'b0;
-                    start_mult <= 1'b0;
-                    start_scale <= 1'b0;
-                    start_diff <= 1'b0;
-                    done <= 1'b1;
-                    if (start_rising_edge) begin
-                        state <= LOAD;
-                        iteration_count <= 4'd0;
-                    end
-                end
-
-                default: begin
-                    state <= IDLE;
-                    load_v_old <= 1'b0;
-                    load_y <= 1'b0;
-                    load_max_d <= 1'b0;
-                    start_mult <= 1'b0;
-                    start_scale <= 1'b0;
-                    start_diff <= 1'b0;
-                    done <= 1'b0;
-                end
-            endcase
+            state_q      <= state_d;
+            wait_max_q   <= wait_max_d;
+            iter_q       <= iter_d;
+            mult_busy_q  <= mult_busy_d;
+            scale_busy_q <= scale_busy_d;
+            diff_busy_q  <= diff_busy_d;
+            start_prev_q <= start;
         end
     end
 

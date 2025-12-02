@@ -34,13 +34,13 @@ module tb_vector_diff;
 	// ========================================
 	
 	vector_diff #(.WIDTH(WIDTH)) uut (
-		.clk(clk),
-		.reset(reset),
-		.start(start),
-		.V_new(V_new),
-		.V_old(V_old),
+		.clk     (clk),
+		.reset   (reset),
+		.start   (start),
+		.vec_new (V_new),
+		.vec_old (V_old),
 		.max_diff(max_diff),
-		.done(done)
+		.done    (done)
 	);
 	
 	// Unpack signals

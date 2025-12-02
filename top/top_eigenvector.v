@@ -24,7 +24,7 @@ module top_eigenvector (
 
     // CPU_RESET on Nexys A7 is active-low (pressed=0, released=1)
     // Invert to get active-high reset for internal logic
-    wire reset_internal = ~reset;
+    wire rst_active = ~reset;
     
     // Button debouncing on main clock (clk = 100 MHz)
     // Using longer shift registers for reliable debouncing at higher frequency
@@ -34,7 +34,7 @@ module top_eigenvector (
     reg btnl_pulse, btnr_pulse, btnu_pulse, btnd_pulse, btnc_pulse;
     
     always @(posedge clk) begin
-        if (reset_internal) begin
+        if (rst_active) begin
             btnl_sr <= 16'd0;
             btnr_sr <= 16'd0;
             btnu_sr <= 16'd0;
@@ -86,192 +86,192 @@ module top_eigenvector (
         end
     end
     
-    reg [1:0] edit_row;
-    reg [1:0] edit_col;
-    reg [3:0] edit_val;
-    reg [3:0] matrix_a [0:3][0:3];
-    reg [3:0] vector_v [0:3];
-    wire [16*4-1:0] matrix_a_packed;
-    wire [4*4-1:0] vector_v_packed;
+    reg [1:0] edit_row_q;
+    reg [1:0] edit_col_q;
+    reg [3:0] edit_value_q;
+    reg [3:0] matrix_grid_q [0:3][0:3];
+    reg [3:0] vector_seed_q [0:3];
+    wire [16*4-1:0] matrix_grid_packed;
+    wire [4*4-1:0] vector_seed_packed;
     
     // Cell locked state - controls edit mode behavior
     // 0 = unlocked (can navigate), 1 = locked (editing value)
-    reg cell_locked;
+    reg cell_lock_q;
     
-    // Next-state logic for edit_row and edit_col (combinational)
+    // Next-state logic for edit_row_q and edit_col_q (combinational)
     // MUST be declared as reg since assigned in always block
-    reg [1:0] next_edit_row;
-    reg [1:0] next_edit_col;
+    reg [1:0] edit_row_d;
+    reg [1:0] edit_col_d;
     
-    // Next-state logic for matrix_a and vector_v (combinational)
+    // Next-state logic for matrix_grid_q and vector_seed_q (combinational)
     // MUST be declared as reg arrays since assigned in always block
-    reg [3:0] next_matrix_a [0:3][0:3];
-    reg [3:0] next_vector_v [0:3];
+    reg [3:0] matrix_grid_d [0:3][0:3];
+    reg [3:0] vector_seed_d [0:3];
     
-    // Next-state logic for edit_val (combinational)
+    // Next-state logic for edit_value_q (combinational)
     // MUST be declared as reg since assigned in always block
-    reg [3:0] next_edit_val;
+    reg [3:0] edit_value_d;
     
-    // SINGLE always @(*) block for next-state computation (edit_row/edit_col)
+    // SINGLE always @(*) block for next-state computation (edit_row_q/edit_col_q)
     always @(*) begin
         // Default: keep current values
-        next_edit_row = edit_row;
-        next_edit_col = edit_col;
+        edit_row_d = edit_row_q;
+        edit_col_d = edit_col_q;
         
         // Navigation only works when in edit mode AND cell is NOT locked
-        if (~sw0 && ~cell_locked) begin
+        if (~sw0 && ~cell_lock_q) begin
             // Handle row changes
             if (btnu_pulse) begin
-                if (edit_row > 2'b00)
-                    next_edit_row = edit_row - 1'b1;
+                if (edit_row_q > 2'b00)
+                    edit_row_d = edit_row_q - 1'b1;
             end else if (btnd_pulse) begin
-                if (edit_row < 2'b11)
-                    next_edit_row = edit_row + 1'b1;
+                if (edit_row_q < 2'b11)
+                    edit_row_d = edit_row_q + 1'b1;
             end
             
             // Handle column changes (matrix only)
             if (sw1 == 1'b0) begin  // Matrix mode
                 if (btnl_pulse) begin
-                    if (edit_col > 2'b00)
-                        next_edit_col = edit_col - 1'b1;
+                    if (edit_col_q > 2'b00)
+                        edit_col_d = edit_col_q - 1'b1;
                 end else if (btnr_pulse) begin
-                    if (edit_col < 2'b11)
-                        next_edit_col = edit_col + 1'b1;
+                    if (edit_col_q < 2'b11)
+                        edit_col_d = edit_col_q + 1'b1;
                 end
             end
         end
         // When locked or in run mode, keep current values (already set as default)
     end
     
-    // SINGLE always @(*) block for next-state computation (matrix_a/vector_v)
+    // SINGLE always @(*) block for next-state computation (matrix_grid_q/vector_seed_q)
     integer i, j;
     always @(*) begin
         // Default: keep all current values
         for (i = 0; i < 4; i = i + 1) begin
             for (j = 0; j < 4; j = j + 1) begin
-                next_matrix_a[i][j] = matrix_a[i][j];
+                matrix_grid_d[i][j] = matrix_grid_q[i][j];
             end
-            next_vector_v[i] = vector_v[i];
+            vector_seed_d[i] = vector_seed_q[i];
         end
         
-        if (reset_internal) begin
+        if (rst_active) begin
             // Initialize on reset
-            next_matrix_a[0][0] = 4'd4; next_matrix_a[0][1] = 4'd1; next_matrix_a[0][2] = 4'd1; next_matrix_a[0][3] = 4'd1;
-            next_matrix_a[1][0] = 4'd1; next_matrix_a[1][1] = 4'd4; next_matrix_a[1][2] = 4'd1; next_matrix_a[1][3] = 4'd1;
-            next_matrix_a[2][0] = 4'd1; next_matrix_a[2][1] = 4'd1; next_matrix_a[2][2] = 4'd4; next_matrix_a[2][3] = 4'd1;
-            next_matrix_a[3][0] = 4'd1; next_matrix_a[3][1] = 4'd1; next_matrix_a[3][2] = 4'd1; next_matrix_a[3][3] = 4'd4;
+            matrix_grid_d[0][0] = 4'd4; matrix_grid_d[0][1] = 4'd1; matrix_grid_d[0][2] = 4'd1; matrix_grid_d[0][3] = 4'd1;
+            matrix_grid_d[1][0] = 4'd1; matrix_grid_d[1][1] = 4'd4; matrix_grid_d[1][2] = 4'd1; matrix_grid_d[1][3] = 4'd1;
+            matrix_grid_d[2][0] = 4'd1; matrix_grid_d[2][1] = 4'd1; matrix_grid_d[2][2] = 4'd4; matrix_grid_d[2][3] = 4'd1;
+            matrix_grid_d[3][0] = 4'd1; matrix_grid_d[3][1] = 4'd1; matrix_grid_d[3][2] = 4'd1; matrix_grid_d[3][3] = 4'd4;
             for (i = 0; i < 4; i = i + 1) begin
-                next_vector_v[i] = 4'd1;
+                vector_seed_d[i] = 4'd1;
             end
-        end else if (~sw0 && btnc_pulse && cell_locked) begin
+        end else if (~sw0 && btnc_pulse && cell_lock_q) begin
             // Edit mode with cell locked: SAVE value and unlock
             if (sw1 == 1'b0) begin
                 // Edit matrix
-                next_matrix_a[edit_row][edit_col] = edit_val;
+                matrix_grid_d[edit_row_q][edit_col_q] = edit_value_q;
             end else begin
                 // Edit vector
-                next_vector_v[edit_row] = edit_val;
+                vector_seed_d[edit_row_q] = edit_value_q;
             end
         end
     end
     
-    // SINGLE always block for edit_row, edit_col, and cell_locked state update
+    // SINGLE always block for edit_row_q, edit_col_q, and cell_lock_q state update
     // Now on main clock for proper synchronization with VGA
     always @(posedge clk) begin
-        if (reset_internal) begin
-            edit_row <= 2'b00;
-            edit_col <= 2'b00;
-            cell_locked <= 1'b0;
+        if (rst_active) begin
+            edit_row_q <= 2'b00;
+            edit_col_q <= 2'b00;
+            cell_lock_q <= 1'b0;
         end else begin
-            edit_row <= next_edit_row;
-            edit_col <= next_edit_col;
+            edit_row_q <= edit_row_d;
+            edit_col_q <= edit_col_d;
             
-            // Handle cell_locked state transitions with BTNC
+            // Handle cell_lock_q state transitions with BTNC
             if (~sw0 && btnc_pulse) begin
                 // Toggle locked state when BTNC pressed in edit mode
-                cell_locked <= ~cell_locked;
+                cell_lock_q <= ~cell_lock_q;
             end else if (sw0) begin
                 // Force unlock when entering run mode
-                cell_locked <= 1'b0;
+                cell_lock_q <= 1'b0;
             end
         end
     end
     
-    reg sw0_prev, sw1_prev;
-    reg [1:0] edit_row_prev;
+    reg sw0_prev_q, sw1_prev_q;
+    reg [1:0] edit_row_prev_q;
     
     always @(posedge clk) begin
-        if (reset_internal) begin
-            sw0_prev <= 1'b0;
-            sw1_prev <= 1'b0;
-            edit_row_prev <= 2'b00;
+        if (rst_active) begin
+            sw0_prev_q <= 1'b0;
+            sw1_prev_q <= 1'b0;
+            edit_row_prev_q <= 2'b00;
         end else begin
-            sw0_prev <= sw0;
-            sw1_prev <= sw1;
-            edit_row_prev <= edit_row;
+            sw0_prev_q <= sw0;
+            sw1_prev_q <= sw1;
+            edit_row_prev_q <= edit_row_q;
         end
     end
     
-    reg cell_locked_prev;
+    reg cell_lock_prev_q;
     
     always @(posedge clk) begin
-        if (reset_internal) begin
-            cell_locked_prev <= 1'b0;
+        if (rst_active) begin
+            cell_lock_prev_q <= 1'b0;
         end else begin
-            cell_locked_prev <= cell_locked;
+            cell_lock_prev_q <= cell_lock_q;
         end
     end
     
-    // SINGLE always @(*) block for next_edit_val computation
+    // SINGLE always @(*) block for edit_value_d computation
     always @(*) begin
         // Default: keep current value
-        next_edit_val = edit_val;
+        edit_value_d = edit_value_q;
         
-        if (reset_internal) begin
-            next_edit_val = 4'd0;
+        if (rst_active) begin
+            edit_value_d = 4'd0;
         end else if (~sw0) begin
             // When locking onto a cell (transition from unlocked to locked), load current value
-            if (~cell_locked_prev && cell_locked) begin
+            if (~cell_lock_prev_q && cell_lock_q) begin
                 if (sw1 == 1'b0) begin
-                    next_edit_val = matrix_a[edit_row][edit_col];
+                    edit_value_d = matrix_grid_q[edit_row_q][edit_col_q];
                 end else begin
-                    next_edit_val = vector_v[edit_row];
+                    edit_value_d = vector_seed_q[edit_row_q];
                 end
             end
             // When cell is locked, allow value editing with left/right buttons
-            else if (cell_locked) begin
+            else if (cell_lock_q) begin
                 if (btnl_pulse) begin
-                    next_edit_val = (edit_val == 4'd0) ? 4'd0 : edit_val - 4'd1;
+                    edit_value_d = (edit_value_q == 4'd0) ? 4'd0 : edit_value_q - 4'd1;
                 end else if (btnr_pulse) begin
-                    next_edit_val = (edit_val == 4'd15) ? 4'd15 : edit_val + 4'd1;
+                    edit_value_d = (edit_value_q == 4'd15) ? 4'd15 : edit_value_q + 4'd1;
                 end
             end
             // When not locked and navigating, show preview of cell value
-            else if ((sw1_prev != sw1) || (edit_row_prev != edit_row)) begin
+            else if ((sw1_prev_q != sw1) || (edit_row_prev_q != edit_row_q)) begin
                 if (sw1 == 1'b0) begin
-                    next_edit_val = matrix_a[edit_row][edit_col];
+                    edit_value_d = matrix_grid_q[edit_row_q][edit_col_q];
                 end else begin
-                    next_edit_val = vector_v[edit_row];
+                    edit_value_d = vector_seed_q[edit_row_q];
                 end
             end
         end
     end
     
-    // SINGLE always @(posedge clk) block for edit_val state update
+    // SINGLE always @(posedge clk) block for edit_value_q state update
     always @(posedge clk) begin
-        edit_val <= next_edit_val;
+        edit_value_q <= edit_value_d;
     end
     
-    // SINGLE always block for matrix_a and vector_v state update
-    // Updates from next_matrix_a/next_vector_v (which handles reset, edit mode, etc.)
+    // SINGLE always block for matrix_grid_q and vector_seed_q state update
+    // Updates from matrix_grid_d/vector_seed_d (which handles reset, edit mode, etc.)
     integer k, l;
     always @(posedge clk) begin
         // Update all elements from next-state (next-state logic handles reset and edits)
         for (k = 0; k < 4; k = k + 1) begin
             for (l = 0; l < 4; l = l + 1) begin
-                matrix_a[k][l] <= next_matrix_a[k][l];
+                matrix_grid_q[k][l] <= matrix_grid_d[k][l];
             end
-            vector_v[k] <= next_vector_v[k];
+            vector_seed_q[k] <= vector_seed_d[k];
         end
     end
     
@@ -286,24 +286,30 @@ module top_eigenvector (
     wire [3:0] v_old0, v_old1, v_old2, v_old3;
     
     // Iteration counter
-    reg [7:0] iteration_count;
+    reg [7:0] iter_count_q;
+    reg [7:0] iter_count_d;
     reg [15:0] debug_display_value_reg;
     
     reg sw0_r;
     wire sw0_edge;
     
+    always @(*) begin
+        iter_count_d = iter_count_q;
+        if (scale_done) begin
+            iter_count_d = iter_count_q + 1'b1;
+        end
+        if (sw0_edge) begin
+            iter_count_d = 8'd0;
+        end
+    end
+    
     always @(posedge clk) begin
-        if (reset_internal) begin
+        if (rst_active) begin
             sw0_r <= 1'b0;
-            iteration_count <= 8'd0;
+            iter_count_q <= 8'd0;
         end else begin
             sw0_r <= sw0;
-            if (scale_done) begin
-                iteration_count <= iteration_count + 1'b1;
-            end
-            if (sw0_edge) begin
-                iteration_count <= 8'd0;
-            end
+            iter_count_q <= iter_count_d;
         end
     end
     
@@ -311,7 +317,7 @@ module top_eigenvector (
     
     dominant_fsm fsm_inst (
         .clk(clk),
-        .reset(reset_internal),
+        .reset(rst_active),
         .start(sw0_edge),
         .mul_done(mul_done),
         .scale_done(scale_done),
@@ -330,30 +336,30 @@ module top_eigenvector (
     
     dominant_datapath datapath_inst (
         .clk(clk),
-        .reset(reset_internal),
+        .reset(rst_active),
         .load_v_old(load_v_old),
         .load_y(load_y),
         .load_max_d(load_max_d),
         .start_mult(start_mult),
         .start_scale(start_scale),
         .start_diff(start_diff),
-        .v_init(vector_v_packed),
-        .A00(matrix_a[0][0]),
-        .A01(matrix_a[0][1]),
-        .A02(matrix_a[0][2]),
-        .A03(matrix_a[0][3]),
-        .A10(matrix_a[1][0]),
-        .A11(matrix_a[1][1]),
-        .A12(matrix_a[1][2]),
-        .A13(matrix_a[1][3]),
-        .A20(matrix_a[2][0]),
-        .A21(matrix_a[2][1]),
-        .A22(matrix_a[2][2]),
-        .A23(matrix_a[2][3]),
-        .A30(matrix_a[3][0]),
-        .A31(matrix_a[3][1]),
-        .A32(matrix_a[3][2]),
-        .A33(matrix_a[3][3]),
+        .v_init(vector_seed_packed),
+        .A00(matrix_grid_q[0][0]),
+        .A01(matrix_grid_q[0][1]),
+        .A02(matrix_grid_q[0][2]),
+        .A03(matrix_grid_q[0][3]),
+        .A10(matrix_grid_q[1][0]),
+        .A11(matrix_grid_q[1][1]),
+        .A12(matrix_grid_q[1][2]),
+        .A13(matrix_grid_q[1][3]),
+        .A20(matrix_grid_q[2][0]),
+        .A21(matrix_grid_q[2][1]),
+        .A22(matrix_grid_q[2][2]),
+        .A23(matrix_grid_q[2][3]),
+        .A30(matrix_grid_q[3][0]),
+        .A31(matrix_grid_q[3][1]),
+        .A32(matrix_grid_q[3][2]),
+        .A33(matrix_grid_q[3][3]),
         .mul_done(mul_done),
         .scale_done(scale_done),
         .diff_done(diff_done),
@@ -369,24 +375,15 @@ module top_eigenvector (
         .v_new_valid_out(v_new_valid)
     );
     
-    // ========================================================================
-    // DEBUG: LED ASSIGNMENTS
-    // ========================================================================
-    // LED[0]: Cell locked indicator (ON when editing a cell value)
-    // LED[1]: Any button pulse active (flashes when button pressed)
-    // LED[2]: Mode indicator (sw0: 0=Edit, 1=Run)
-    // LED[3]: Edit target (sw1: 0=Matrix, 1=Vector)
-    // LED[4:5]: Current edit row (binary)
-    // LED[6:7]: Current edit col (binary)
-    
+    // LED layout: [0]=lock, [1]=button pulse, [2]=mode, [3]=new vector valid, [5:4]=row, [7:6]=col
     wire any_button_pulse = btnl_pulse | btnr_pulse | btnu_pulse | btnd_pulse | btnc_pulse;
     
-    assign led[0] = cell_locked;  // Shows locked/unlocked state
+    assign led[0] = cell_lock_q;  // Shows locked/unlocked state
     assign led[1] = any_button_pulse;
     assign led[2] = sw0;
     assign led[3] = v_new_valid;
-    assign led[5:4] = edit_row;
-    assign led[7:6] = edit_col;
+    assign led[5:4] = edit_row_q;
+    assign led[7:6] = edit_col_q;
     
     // ========================================================================
     // DEBUG: SEVEN SEGMENT DISPLAY
@@ -404,10 +401,10 @@ module top_eigenvector (
     always @(*) begin
         if (sw0 == 1'b0) begin
             // Edit mode: zero-extend nibble value
-            ssd_display_value = {12'd0, edit_val};
+            ssd_display_value = {12'd0, edit_value_q};
         end else begin
             // Run mode: Display iteration count
-            ssd_display_value = {8'd0, iteration_count};
+            ssd_display_value = {8'd0, iter_count_q};
         end
     end
     
@@ -426,13 +423,13 @@ module top_eigenvector (
     // Decimal point: active-low (0=on, 1=off)
     // In edit mode: on for negative (dark), off for positive (lit)
     // In run mode: always off (lit)
-    assign dp = (sw0 == 1'b0) ? ~cell_locked : 1'b1;
+    assign dp = (sw0 == 1'b0) ? ~cell_lock_q : 1'b1;
     
     // Map anode bus to physical pins
     assign {an7, an6, an5, an4, an3, an2, an1, an0} = ssd_anode;
 
     always @(posedge clk) begin
-        if (reset_internal) begin
+        if (rst_active) begin
             ssd_display_value_reg <= 16'd0;
         end else begin
             ssd_display_value_reg <= ssd_display_value;
@@ -443,37 +440,37 @@ module top_eigenvector (
     wire [15:0] v0_zero_ext = {12'd0, v0_debug};
 
     always @(posedge clk) begin
-        if (reset_internal) begin
+        if (rst_active) begin
             debug_display_value_reg <= 16'd0;
         end else if (v_new_valid) begin
             debug_display_value_reg <= v0_zero_ext;
         end
     end
     
-    assign matrix_a_packed = {matrix_a[3][3], matrix_a[3][2], matrix_a[3][1], matrix_a[3][0],
-                              matrix_a[2][3], matrix_a[2][2], matrix_a[2][1], matrix_a[2][0],
-                              matrix_a[1][3], matrix_a[1][2], matrix_a[1][1], matrix_a[1][0],
-                              matrix_a[0][3], matrix_a[0][2], matrix_a[0][1], matrix_a[0][0]};
+    assign matrix_grid_packed = {matrix_grid_q[3][3], matrix_grid_q[3][2], matrix_grid_q[3][1], matrix_grid_q[3][0],
+                              matrix_grid_q[2][3], matrix_grid_q[2][2], matrix_grid_q[2][1], matrix_grid_q[2][0],
+                              matrix_grid_q[1][3], matrix_grid_q[1][2], matrix_grid_q[1][1], matrix_grid_q[1][0],
+                              matrix_grid_q[0][3], matrix_grid_q[0][2], matrix_grid_q[0][1], matrix_grid_q[0][0]};
 
-    assign vector_v_packed = {vector_v[3], vector_v[2], vector_v[1], vector_v[0]};
+    assign vector_seed_packed = {vector_seed_q[3], vector_seed_q[2], vector_seed_q[1], vector_seed_q[0]};
 
     wire [15:0] v_old_packed = {v_old3, v_old2, v_old1, v_old0};
     wire [15:0] v_new_packed = v_out;
     
     vga_top vga_display (
         .clk_100mhz(clk),
-        .reset(reset_internal),
-        .edit_row(edit_row),
-        .edit_col(edit_col),
-        .cell_locked(cell_locked),
+        .reset(rst_active),
+        .edit_row(edit_row_q),
+        .edit_col(edit_col_q),
+        .cell_locked(cell_lock_q),
         .sw0(sw0),
         .sw1(sw1),
         .sw_eps(sw_eps),
-        .matrix_a(matrix_a_packed),
-        .vector_v(vector_v_packed),
+        .matrix_a(matrix_grid_packed),
+        .vector_v(vector_seed_packed),
         .fsm_state(fsm_state),
         .fsm_done(fsm_done),
-        .iteration_count(iteration_count),
+        .iteration_count(iter_count_q),
         .v_old(v_old_packed),
         .v_new(v_new_packed),
         .vga_hsync(vga_hsync),

@@ -28,22 +28,22 @@ async def test_vector_register(dut):
     await RisingEdge(dut.clk)
     dut.reset.value = 0
     
-    lane_width = len(dut.out.value) // 4
+    lane_width = len(dut.vec_out.value) // 4
     
     # Check initial value (should be [1,1,1,1])
     await RisingEdge(dut.clk)
-    observed = unpack_vector(dut.out.value.integer, lane_width)
+    observed = unpack_vector(dut.vec_out.value.integer, lane_width)
     assert observed == [1, 1, 1, 1], f"Initial value should be [1,1,1,1], got {observed}"
     
     # Load new value
     new_vec = [8, 7, 6, 5]
-    dut._id("in", extended=False).value = pack_vector(new_vec, lane_width)
+    dut.vec_in.value = pack_vector(new_vec, lane_width)
     dut.load.value = 1
     await RisingEdge(dut.clk)
     dut.load.value = 0
     await RisingEdge(dut.clk)
     
-    observed = unpack_vector(dut.out.value.integer, lane_width)
+    observed = unpack_vector(dut.vec_out.value.integer, lane_width)
     assert observed == new_vec, f"Expected {new_vec}, got {observed}"
     
     print("✓ vector_register test passed")

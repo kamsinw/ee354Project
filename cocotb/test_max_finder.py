@@ -29,10 +29,10 @@ async def test_max_finder(dut):
     ]
     
     for vec in test_vectors:
-        dut.a.value = pack_vector(vec)
+        dut.lane_values.value = pack_vector(vec)
         await RisingEdge(dut.clk)
         await RisingEdge(dut.clk)
-        assert dut.max_val.value.integer == max(vec), f"Expected {max(vec)}, got {dut.max_val.value.integer}"
+        assert dut.max_value.value.integer == max(vec), f"Expected {max(vec)}, got {dut.max_value.value.integer}"
     
     print("✓ max_finder test passed")
 

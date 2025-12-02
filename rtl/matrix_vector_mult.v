@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 module matrix_vector_mult #(
-    parameter OUT_WIDTH = 12
+    parameter integer OUT_WIDTH = 12
 ) (
     input  wire                   clk,
     input  wire                   reset,
@@ -12,14 +12,21 @@ module matrix_vector_mult #(
     output reg                    done
 );
 
-    localparam PARTIAL_WIDTH = OUT_WIDTH + 2;
-    localparam [OUT_WIDTH-1:0] OUT_MAX = {OUT_WIDTH{1'b1}};
-    localparam [PARTIAL_WIDTH-1:0] OUT_MAX_EXT = {{(PARTIAL_WIDTH-OUT_WIDTH){1'b0}}, OUT_MAX};
+    localparam integer PARTIAL_WIDTH = (OUT_WIDTH >= 10) ? OUT_WIDTH + 2 : 12;
+    localparam [OUT_WIDTH-1:0]         OUT_MAX     = {OUT_WIDTH{1'b1}};
+    localparam [PARTIAL_WIDTH-1:0]     OUT_MAX_EXT = {{(PARTIAL_WIDTH-OUT_WIDTH){1'b0}}, OUT_MAX};
 
-    reg [1:0] row_idx;
-    reg [1:0] col_idx;
-    reg [PARTIAL_WIDTH-1:0] accum;
-    reg busy;
+    reg [1:0] row_idx_q;
+    reg [1:0] row_idx_d;
+    reg [1:0] col_idx_q;
+    reg [1:0] col_idx_d;
+    reg [PARTIAL_WIDTH-1:0] accum_q;
+    reg [PARTIAL_WIDTH-1:0] accum_d;
+    reg [4*OUT_WIDTH-1:0]   y_q;
+    reg [4*OUT_WIDTH-1:0]   y_d;
+    reg                     busy_q;
+    reg                     busy_d;
+    reg                     done_d;
 
     wire [3:0] matrix [0:3][0:3];
     assign matrix[0][0] = A[3:0];
@@ -45,51 +52,65 @@ module matrix_vector_mult #(
     assign vec[2] = V[11:8];
     assign vec[3] = V[15:12];
 
-    reg [7:0]  product;
-    reg [PARTIAL_WIDTH-1:0] accum_next;
+    wire [7:0] product      = matrix[row_idx_q][col_idx_q] * vec[col_idx_q];
+    wire       last_col     = (col_idx_q == 2'd3);
+    wire       last_row     = (row_idx_q == 2'd3);
+    wire [PARTIAL_WIDTH-1:0] accum_sum = accum_q + product;
+    wire [OUT_WIDTH-1:0]     row_result = (accum_sum > OUT_MAX_EXT)
+                                        ? OUT_MAX
+                                        : accum_sum[OUT_WIDTH-1:0];
 
-    always @(posedge clk) begin
-        if (reset) begin
-            row_idx <= 2'd0;
-            col_idx <= 2'd0;
-            accum   <= {PARTIAL_WIDTH{1'b0}};
-            Y       <= {4*OUT_WIDTH{1'b0}};
-            done    <= 1'b0;
-            busy    <= 1'b0;
-        end else begin
-            if (start && !busy) begin
-                row_idx <= 2'd0;
-                col_idx <= 2'd0;
-                accum   <= {PARTIAL_WIDTH{1'b0}};
-                Y       <= {4*OUT_WIDTH{1'b0}};
-                busy    <= 1'b1;
-                done    <= 1'b0;
-            end else if (busy) begin
-                product    = matrix[row_idx][col_idx] * vec[col_idx];
-                accum_next = accum + product;
-                accum      <= accum_next;
-                if (col_idx == 2'd3) begin
-                    if (accum_next > OUT_MAX_EXT)
-                        Y[row_idx*OUT_WIDTH +: OUT_WIDTH] <= OUT_MAX;
-                    else
-                        Y[row_idx*OUT_WIDTH +: OUT_WIDTH] <= accum_next[OUT_WIDTH-1:0];
-                    accum   <= {PARTIAL_WIDTH{1'b0}};
-                    col_idx <= 2'd0;
-                    if (row_idx == 2'd3) begin
-                        busy <= 1'b0;
-                        done <= 1'b1;
-                        row_idx <= 2'd0;
-                    end else begin
-                        row_idx <= row_idx + 1'b1;
-                    end
+    always @(*) begin
+        row_idx_d = row_idx_q;
+        col_idx_d = col_idx_q;
+        accum_d   = accum_q;
+        y_d       = y_q;
+        busy_d    = busy_q;
+        done_d    = 1'b0;
+
+        if (start && !busy_q) begin
+            row_idx_d = 2'd0;
+            col_idx_d = 2'd0;
+            accum_d   = {PARTIAL_WIDTH{1'b0}};
+            y_d       = {4*OUT_WIDTH{1'b0}};
+            busy_d    = 1'b1;
+        end else if (busy_q) begin
+            if (last_col) begin
+                y_d[row_idx_q*OUT_WIDTH +: OUT_WIDTH] = row_result;
+                accum_d = {PARTIAL_WIDTH{1'b0}};
+                col_idx_d = 2'd0;
+                if (last_row) begin
+                    busy_d = 1'b0;
+                    done_d = 1'b1;
+                    row_idx_d = 2'd0;
                 end else begin
-                    col_idx <= col_idx + 1'b1;
+                    row_idx_d = row_idx_q + 1'b1;
                 end
             end else begin
-                done <= 1'b0;
+                accum_d   = accum_sum;
+                col_idx_d = col_idx_q + 1'b1;
             end
         end
     end
 
-endmodule
+    always @(posedge clk) begin
+        if (reset) begin
+            row_idx_q <= 2'd0;
+            col_idx_q <= 2'd0;
+            accum_q   <= {PARTIAL_WIDTH{1'b0}};
+            y_q       <= {4*OUT_WIDTH{1'b0}};
+            busy_q    <= 1'b0;
+            Y         <= {4*OUT_WIDTH{1'b0}};
+            done      <= 1'b0;
+        end else begin
+            row_idx_q <= row_idx_d;
+            col_idx_q <= col_idx_d;
+            accum_q   <= accum_d;
+            y_q       <= y_d;
+            busy_q    <= busy_d;
+            Y         <= y_d;
+            done      <= done_d;
+        end
+    end
 
+endmodule
