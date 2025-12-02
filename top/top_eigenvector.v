@@ -1,6 +1,7 @@
 `timescale 1ns / 1ps
 
 module top_eigenvector (
+
     input  wire        clk,
     input  wire        reset,
     input  wire        sw0,
@@ -87,9 +88,11 @@ module top_eigenvector (
     
     reg [1:0] edit_row;
     reg [1:0] edit_col;
-    reg signed [15:0] edit_val;
-    reg signed [15:0] matrix_a [0:3][0:3];
-    reg signed [15:0] vector_v [0:3];
+    reg [3:0] edit_val;
+    reg [3:0] matrix_a [0:3][0:3];
+    reg [3:0] vector_v [0:3];
+    wire [16*4-1:0] matrix_a_packed;
+    wire [4*4-1:0] vector_v_packed;
     
     // Cell locked state - controls edit mode behavior
     // 0 = unlocked (can navigate), 1 = locked (editing value)
@@ -102,12 +105,12 @@ module top_eigenvector (
     
     // Next-state logic for matrix_a and vector_v (combinational)
     // MUST be declared as reg arrays since assigned in always block
-    reg signed [15:0] next_matrix_a [0:3][0:3];
-    reg signed [15:0] next_vector_v [0:3];
+    reg [3:0] next_matrix_a [0:3][0:3];
+    reg [3:0] next_vector_v [0:3];
     
     // Next-state logic for edit_val (combinational)
     // MUST be declared as reg since assigned in always block
-    reg signed [15:0] next_edit_val;
+    reg [3:0] next_edit_val;
     
     // SINGLE always @(*) block for next-state computation (edit_row/edit_col)
     always @(*) begin
@@ -153,12 +156,12 @@ module top_eigenvector (
         
         if (reset_internal) begin
             // Initialize on reset
-            next_matrix_a[0][0] = 16'sd4; next_matrix_a[0][1] = 16'sd1; next_matrix_a[0][2] = 16'sd1; next_matrix_a[0][3] = 16'sd1;
-            next_matrix_a[1][0] = 16'sd1; next_matrix_a[1][1] = 16'sd4; next_matrix_a[1][2] = 16'sd1; next_matrix_a[1][3] = 16'sd1;
-            next_matrix_a[2][0] = 16'sd1; next_matrix_a[2][1] = 16'sd1; next_matrix_a[2][2] = 16'sd4; next_matrix_a[2][3] = 16'sd1;
-            next_matrix_a[3][0] = 16'sd1; next_matrix_a[3][1] = 16'sd1; next_matrix_a[3][2] = 16'sd1; next_matrix_a[3][3] = 16'sd4;
+            next_matrix_a[0][0] = 4'd4; next_matrix_a[0][1] = 4'd1; next_matrix_a[0][2] = 4'd1; next_matrix_a[0][3] = 4'd1;
+            next_matrix_a[1][0] = 4'd1; next_matrix_a[1][1] = 4'd4; next_matrix_a[1][2] = 4'd1; next_matrix_a[1][3] = 4'd1;
+            next_matrix_a[2][0] = 4'd1; next_matrix_a[2][1] = 4'd1; next_matrix_a[2][2] = 4'd4; next_matrix_a[2][3] = 4'd1;
+            next_matrix_a[3][0] = 4'd1; next_matrix_a[3][1] = 4'd1; next_matrix_a[3][2] = 4'd1; next_matrix_a[3][3] = 4'd4;
             for (i = 0; i < 4; i = i + 1) begin
-                next_vector_v[i] = 16'sd1;
+                next_vector_v[i] = 4'd1;
             end
         end else if (~sw0 && btnc_pulse && cell_locked) begin
             // Edit mode with cell locked: SAVE value and unlock
@@ -225,7 +228,7 @@ module top_eigenvector (
         next_edit_val = edit_val;
         
         if (reset_internal) begin
-            next_edit_val = 16'sd0;
+            next_edit_val = 4'd0;
         end else if (~sw0) begin
             // When locking onto a cell (transition from unlocked to locked), load current value
             if (~cell_locked_prev && cell_locked) begin
@@ -238,9 +241,9 @@ module top_eigenvector (
             // When cell is locked, allow value editing with left/right buttons
             else if (cell_locked) begin
                 if (btnl_pulse) begin
-                    next_edit_val = edit_val - 16'sd1;
+                    next_edit_val = (edit_val == 4'd0) ? 4'd0 : edit_val - 4'd1;
                 end else if (btnr_pulse) begin
-                    next_edit_val = edit_val + 16'sd1;
+                    next_edit_val = (edit_val == 4'd15) ? 4'd15 : edit_val + 4'd1;
                 end
             end
             // When not locked and navigating, show preview of cell value
@@ -276,14 +279,15 @@ module top_eigenvector (
     wire load_v_old, load_y, load_max_d;
     wire start_mult, start_scale, start_diff;
     wire mul_done, scale_done, diff_done;
-    wire signed [15:0] max_d_out;
-    wire signed [63:0] v_out;
+    wire [3:0] max_d_out;
+    wire [15:0] v_out;
+    wire               v_new_valid;
     wire [7:0] fsm_state;
-    wire signed [15:0] v_old0, v_old1, v_old2, v_old3;
+    wire [3:0] v_old0, v_old1, v_old2, v_old3;
     
     // Iteration counter
     reg [7:0] iteration_count;
-    reg load_v_old_prev;
+    reg [15:0] debug_display_value_reg;
     
     reg sw0_r;
     wire sw0_edge;
@@ -292,15 +296,11 @@ module top_eigenvector (
         if (reset_internal) begin
             sw0_r <= 1'b0;
             iteration_count <= 8'd0;
-            load_v_old_prev <= 1'b0;
         end else begin
             sw0_r <= sw0;
-            load_v_old_prev <= load_v_old;
-            // Count iterations: increment when load_v_old transitions from 0 to 1
-            if (load_v_old && !load_v_old_prev) begin
+            if (scale_done) begin
                 iteration_count <= iteration_count + 1'b1;
             end
-            // Reset counter when starting new computation
             if (sw0_edge) begin
                 iteration_count <= 8'd0;
             end
@@ -337,6 +337,7 @@ module top_eigenvector (
         .start_mult(start_mult),
         .start_scale(start_scale),
         .start_diff(start_diff),
+        .v_init(vector_v_packed),
         .A00(matrix_a[0][0]),
         .A01(matrix_a[0][1]),
         .A02(matrix_a[0][2]),
@@ -357,14 +358,15 @@ module top_eigenvector (
         .scale_done(scale_done),
         .diff_done(diff_done),
         .max_d_out(max_d_out),
-        .v0(v_out[15:0]),
-        .v1(v_out[31:16]),
-        .v2(v_out[47:32]),
-        .v3(v_out[63:48]),
+        .v0(v_out[3:0]),
+        .v1(v_out[7:4]),
+        .v2(v_out[11:8]),
+        .v3(v_out[15:12]),
         .v_old0(v_old0),
         .v_old1(v_old1),
         .v_old2(v_old2),
-        .v_old3(v_old3)
+        .v_old3(v_old3),
+        .v_new_valid_out(v_new_valid)
     );
     
     // ========================================================================
@@ -382,7 +384,7 @@ module top_eigenvector (
     assign led[0] = cell_locked;  // Shows locked/unlocked state
     assign led[1] = any_button_pulse;
     assign led[2] = sw0;
-    assign led[3] = sw1;
+    assign led[3] = v_new_valid;
     assign led[5:4] = edit_row;
     assign led[7:6] = edit_col;
     
@@ -394,32 +396,26 @@ module top_eigenvector (
     // - Run mode (sw0=1): Show iteration count
     
     reg [15:0] ssd_display_value;
-    wire [3:0] ssd_anode;
+    reg [15:0] ssd_display_value_reg;
+    wire [7:0] ssd_anode;
     wire [6:0] ssd_segments;
     
     // Select what to display based on mode
     always @(*) begin
         if (sw0 == 1'b0) begin
-            // Edit mode: Display edit_val
-            // Handle negative numbers by displaying absolute value
-            // (The MSB LED can indicate sign)
-            if (edit_val[15] == 1'b1) begin
-                // Negative: display 2's complement magnitude
-                ssd_display_value = (~edit_val + 16'd1) & 16'h7FFF;
-            end else begin
-                // Positive: display as-is
-                ssd_display_value = edit_val & 16'h7FFF;
-            end
+            // Edit mode: zero-extend nibble value
+            ssd_display_value = {12'd0, edit_val};
         end else begin
             // Run mode: Display iteration count
             ssd_display_value = {8'd0, iteration_count};
         end
     end
     
-    // Instantiate 7-segment display counter (4 digits)
+    // Instantiate 7-segment display counter (8 digits: left=debug, right=status)
     ssd_counter ssd_debug (
         .clk(clk),
-        .displayNumber(ssd_display_value),
+        .displayNumberLow(ssd_display_value_reg),
+        .displayNumberHigh(debug_display_value_reg),
         .anode(ssd_anode),
         .ssdOut(ssd_segments)
     );
@@ -430,23 +426,39 @@ module top_eigenvector (
     // Decimal point: active-low (0=on, 1=off)
     // In edit mode: on for negative (dark), off for positive (lit)
     // In run mode: always off (lit)
-    assign dp = (sw0 == 1'b0) ? edit_val[15] : 1'b1;
+    assign dp = (sw0 == 1'b0) ? ~cell_locked : 1'b1;
     
-    // Map 4-bit anode to 8 anodes (use lower 4 digits, upper 4 off)
-    assign {an7, an6, an5, an4} = 4'b1111;  // Upper 4 digits off
-    assign {an3, an2, an1, an0} = ssd_anode; // Lower 4 digits active
+    // Map anode bus to physical pins
+    assign {an7, an6, an5, an4, an3, an2, an1, an0} = ssd_anode;
+
+    always @(posedge clk) begin
+        if (reset_internal) begin
+            ssd_display_value_reg <= 16'd0;
+        end else begin
+            ssd_display_value_reg <= ssd_display_value;
+        end
+    end
+
+    wire [3:0] v0_debug = v_out[3:0];
+    wire [15:0] v0_zero_ext = {12'd0, v0_debug};
+
+    always @(posedge clk) begin
+        if (reset_internal) begin
+            debug_display_value_reg <= 16'd0;
+        end else if (v_new_valid) begin
+            debug_display_value_reg <= v0_zero_ext;
+        end
+    end
     
-    wire signed [16*16-1:0] matrix_a_packed;
     assign matrix_a_packed = {matrix_a[3][3], matrix_a[3][2], matrix_a[3][1], matrix_a[3][0],
                               matrix_a[2][3], matrix_a[2][2], matrix_a[2][1], matrix_a[2][0],
                               matrix_a[1][3], matrix_a[1][2], matrix_a[1][1], matrix_a[1][0],
                               matrix_a[0][3], matrix_a[0][2], matrix_a[0][1], matrix_a[0][0]};
 
-    wire signed [4*16-1:0] vector_v_packed;
     assign vector_v_packed = {vector_v[3], vector_v[2], vector_v[1], vector_v[0]};
 
-    wire signed [63:0] v_old_packed = {v_old3, v_old2, v_old1, v_old0};
-    wire signed [63:0] v_new_packed = v_out;
+    wire [15:0] v_old_packed = {v_old3, v_old2, v_old1, v_old0};
+    wire [15:0] v_new_packed = v_out;
     
     vga_top vga_display (
         .clk_100mhz(clk),

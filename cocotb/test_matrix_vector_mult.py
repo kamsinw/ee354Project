@@ -1,6 +1,28 @@
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge, Timer
+from cocotb.triggers import RisingEdge
+
+def pack_matrix(matrix):
+    packed = 0
+    for row in range(4):
+        for col in range(4):
+            idx = 4 * row + col
+            packed |= (matrix[row][col] & 0xF) << (4 * idx)
+    return packed
+
+
+def pack_vector(vec, lane_width):
+    packed = 0
+    mask = (1 << lane_width) - 1
+    for idx, val in enumerate(vec):
+        packed |= (val & mask) << (lane_width * idx)
+    return packed
+
+
+def unpack_vector(value, lane_width):
+    mask = (1 << lane_width) - 1
+    return [(value >> (lane_width * idx)) & mask for idx in range(4)]
+
 
 @cocotb.test()
 async def test_matrix_vector_mult(dut):
@@ -15,19 +37,19 @@ async def test_matrix_vector_mult(dut):
     await RisingEdge(dut.clk)
     dut.reset.value = 0
     
-    # Set up 4x4 identity matrix and vector [1,2,3,4]
-    # Matrix: row-major, packed as A[255:0] = {A33, A32, A31, A30, ..., A00}
-    # Identity matrix: A00=1, A11=1, A22=1, A33=1, others=0
-    A = 0
-    A |= (1 << 0)   # A00
-    A |= (1 << 80)  # A11
-    A |= (1 << 160) # A22
-    A |= (1 << 240) # A33
+    vec_lane_width = len(dut.V.value) // 4
+    out_lane_width = len(dut.Y.value) // 4
     
-    V = (4 << 48) | (3 << 32) | (2 << 16) | 1  # [4,3,2,1]
+    identity = [
+        [1, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1],
+    ]
+    vec = [1, 2, 3, 4]
     
-    dut.A.value = A
-    dut.V.value = V
+    dut.A.value = pack_matrix(identity)
+    dut.V.value = pack_vector(vec, vec_lane_width)
     
     # Start multiplication
     dut.start.value = 1
@@ -42,24 +64,8 @@ async def test_matrix_vector_mult(dut):
     
     assert dut.done.value == 1, "Multiplication did not complete"
     
-    # Check result: Y should be [1,2,3,4] for identity matrix
-    Y_val = dut.Y.value.integer
-    y0 = (Y_val >> 0) & 0xFFFF
-    y1 = (Y_val >> 16) & 0xFFFF
-    y2 = (Y_val >> 32) & 0xFFFF
-    y3 = (Y_val >> 48) & 0xFFFF
-    
-    # Sign extend
-    if y0 & 0x8000:
-        y0 = y0 - 0x10000
-    if y1 & 0x8000:
-        y1 = y1 - 0x10000
-    if y2 & 0x8000:
-        y2 = y2 - 0x10000
-    if y3 & 0x8000:
-        y3 = y3 - 0x10000
-    
-    assert y0 == 1 and y1 == 2 and y2 == 3 and y3 == 4, f"Expected [1,2,3,4], got [{y0},{y1},{y2},{y3}]"
+    observed = unpack_vector(dut.Y.value.integer, out_lane_width)
+    assert observed == vec, f"Expected {vec}, got {observed}"
     
     print("✓ matrix_vector_mult test passed")
 

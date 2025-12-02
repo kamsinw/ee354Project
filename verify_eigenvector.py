@@ -1,186 +1,131 @@
 #!/usr/bin/env python3
 """
-Verify the dominant eigenvector computation by comparing hardware results
-with Python/numpy reference implementation.
+Monte-Carlo verification for the 4-bit unsigned dominant eigenvector flow.
+Generates random matrices/vectors in the 0..15 range, runs a software model
+of the hardware algorithm, and compares it against a floating-point reference.
 """
+
+from __future__ import annotations
 
 import numpy as np
 
-# Test matrix from the testbench
-# Matrix A: [4,1,1,1; 1,4,1,1; 1,1,4,1; 1,1,1,4]
-A = np.array([
-    [4, 1, 1, 1],
-    [1, 4, 1, 1],
-    [1, 1, 4, 1],
-    [1, 1, 1, 4]
-], dtype=np.float64)
+# -----------------------------
+# Configuration / constants
+# -----------------------------
+NIBBLE_MAX = 15
+OUT_WIDTH = 12
+ACC_MAX = (1 << OUT_WIDTH) - 1
+SHIFT_BITS = 8  # matches vector_scale.v SCALE_SHIFT
+NUM_TESTS = 10
+MAX_ITERS = 64
+SEED = 314159
 
-print("=" * 60)
-print("Eigenvector Verification using NumPy")
-print("=" * 60)
-print(f"\nMatrix A:")
-print(A)
-print()
+np.random.seed(SEED)
 
-# ========================================
-# Method 1: NumPy's eig function (analytical)
-# ========================================
-print("=" * 60)
-print("Method 1: NumPy eig() - Analytical Solution")
-print("=" * 60)
-eigenvalues, eigenvectors = np.linalg.eig(A)
 
-# Find the dominant eigenvalue (largest absolute value)
-dominant_idx = np.argmax(np.abs(eigenvalues))
-dominant_eigenvalue = eigenvalues[dominant_idx]
-dominant_eigenvector = eigenvectors[:, dominant_idx]
+def float_power_iteration(A: np.ndarray, v0: np.ndarray, tol: float = 1e-6, max_iters: int = 256) -> np.ndarray:
+    """Floating-point power iteration with L2 normalization."""
+    v = v0.astype(np.float64)
+    if np.linalg.norm(v) == 0:
+        v = np.ones_like(v, dtype=np.float64)
+    for _ in range(max_iters):
+        y = A @ v
+        norm = np.linalg.norm(y)
+        if norm == 0:
+            break
+        v_new = y / norm
+        if np.linalg.norm(v_new - v) < tol:
+            return v_new
+        v = v_new
+    return v
 
-print(f"All eigenvalues: {eigenvalues}")
-print(f"Dominant eigenvalue: {dominant_eigenvalue:.6f}")
-print(f"Dominant eigenvector (complex): {dominant_eigenvector}")
-print()
 
-# Normalize the eigenvector (make it real and unit length)
-# Since the matrix is symmetric, eigenvalues and eigenvectors should be real
-dominant_eigenvector_real = np.real(dominant_eigenvector)
-dominant_eigenvector_unit = dominant_eigenvector_real / np.linalg.norm(dominant_eigenvector_real)
+def quantize_vector(vec: np.ndarray) -> np.ndarray:
+    """Map a floating vector to 4-bit unsigned values by scaling the max to 15."""
+    vec = np.abs(vec)
+    max_val = np.max(vec)
+    if max_val == 0:
+        return np.zeros_like(vec, dtype=np.int32)
+    scaled = np.round((vec / max_val) * NIBBLE_MAX)
+    return np.clip(scaled.astype(np.int32), 0, NIBBLE_MAX)
 
-print(f"Dominant eigenvector (unit normalized): {dominant_eigenvector_unit}")
-print()
 
-# Normalize by max absolute value (like the hardware does)
-max_abs = np.max(np.abs(dominant_eigenvector_real))
-dominant_eigenvector_max_norm = dominant_eigenvector_real / max_abs
+def hardware_iteration(A: np.ndarray, v_init: np.ndarray) -> tuple[np.ndarray, int]:
+    """Software replica of the RTL flow (4-bit unsigned math)."""
+    v = v_init.astype(np.int32)
+    if not np.any(v):
+        v[0] = 1  # avoid zero vector
+    for iteration in range(1, MAX_ITERS + 1):
+        # Matrix-vector multiply with saturation to 4 bits
+        y = A @ v
+        y = np.clip(y, 0, ACC_MAX)
 
-print(f"Dominant eigenvector (max-normalized): {dominant_eigenvector_max_norm}")
-print()
+        # L2 norm (integer sqrt)
+        norm_sq = int(np.sum(y.astype(np.int32) ** 2))
+        norm = int(np.floor(np.sqrt(norm_sq)))
+        if norm == 0:
+            norm = 1
 
-# Convert to Q2.14 fixed-point format (hardware format)
-# In Q2.14: value * 16384 represents the fixed-point number
-q2_14_scale = 16384
-numpy_result = (dominant_eigenvector_max_norm * q2_14_scale).astype(np.int32)
+        # Scale numerator by 2^SHIFT_BITS before dividing
+        y_shifted = y.astype(np.int32) << SHIFT_BITS
+        v_new = np.clip(y_shifted // norm, 0, NIBBLE_MAX)
 
-print(f"NumPy result (Q2.14, max-normalized): {numpy_result}")
-print(f"  As 16-bit signed integers: {numpy_result.astype(np.int16)}")
-print()
+        if np.array_equal(v_new, v):
+            return v_new.astype(np.int32), iteration
+        v = v_new
+    return v.astype(np.int32), MAX_ITERS
 
-# ========================================
-# Method 2: Power iteration (hardware algorithm)
-# ========================================
-print("=" * 60)
-print("Method 2: Power Iteration (Hardware Algorithm)")
-print("=" * 60)
-v = np.array([1.0, 1.0, 1.0, 1.0])  # Initial vector
-epsilon = 2.0  # Convergence threshold (in hardware Q2.14 units)
-max_iterations = 100
 
-print(f"Initial vector: {v}")
-print(f"Epsilon threshold: {epsilon} (in Q2.14 units)")
-print(f"Q2.14 scale factor: {q2_14_scale}")
-print()
+def run_single_test(test_id: int) -> dict:
+    """Generate one random matrix/vector and run both models."""
+    A = np.random.randint(0, NIBBLE_MAX + 1, size=(4, 4), dtype=np.int32)
+    v0 = np.random.randint(0, NIBBLE_MAX + 1, size=4, dtype=np.int32)
+    if not np.any(v0):
+        v0[0] = 1
 
-for i in range(max_iterations):
-    # Matrix-vector multiply: y = A * v
-    y = A @ v
-    
-    # Find max absolute value
-    max_val = np.max(np.abs(y))
-    
-    # Normalize by max (like hardware): v_new = y / max_val
-    v_new = y / max_val
-    
-    # Compute difference
-    diff = np.abs(v_new - v)
-    max_diff = np.max(diff)
-    
-    # Convert to hardware units (Q2.14)
-    v_new_hw = (v_new * q2_14_scale).astype(np.int16)
-    max_diff_hw = (max_diff * q2_14_scale).astype(np.int16)
-    
-    if i < 3 or max_diff_hw <= epsilon:
-        print(f"Iteration {i+1}:")
-        print(f"  y = {y}")
-        print(f"  max_val = {max_val:.6f}")
-        print(f"  v_new = {v_new}")
-        print(f"  v_new (Q2.14) = {v_new_hw}")
-        print(f"  max_diff (Q2.14) = {max_diff_hw}")
-        print()
-    
-    # Check convergence
-    if max_diff_hw <= epsilon:
-        print(f"✓ Converged after {i+1} iterations!")
-        print(f"  Final vector (Q2.14): {v_new_hw}")
-        print(f"  Final max_diff (Q2.14): {max_diff_hw}")
-        break
-    
-    v = v_new
-else:
-    print(f"✗ Did not converge after {max_iterations} iterations")
+    hw_vec, hw_iters = hardware_iteration(A, v0)
+    float_vec = float_power_iteration(A.astype(np.float64), v0.astype(np.float64))
+    ref_vec = quantize_vector(float_vec)
 
-power_iteration_result = v_new_hw
+    match = np.array_equal(hw_vec, ref_vec)
 
-# ========================================
-# Comparison with Hardware Result
-# ========================================
-print()
-print("=" * 60)
-print("Comparison with Hardware Result")
-print("=" * 60)
+    return {
+        "id": test_id,
+        "matrix": A,
+        "vector_init": v0,
+        "hw_vec": hw_vec,
+        "hw_iters": hw_iters,
+        "ref_vec": ref_vec,
+        "match": match,
+    }
 
-# Hardware result from the test
-hardware_result = np.array([16384, 16384, 16384, 16384], dtype=np.int16)
 
-print(f"Hardware result:        {hardware_result}")
-print(f"NumPy eig() result:     {numpy_result.astype(np.int16)}")
-print(f"Power iteration result: {power_iteration_result}")
-print()
+def main() -> None:
+    print("=" * 80)
+    print("Dominant Eigenvector Monte-Carlo (4-bit Unsigned Model)")
+    print(f"Tests: {NUM_TESTS}, RNG seed: {SEED}, SHIFT_BITS={SHIFT_BITS}")
+    print("=" * 80)
 
-# Check if they match
-numpy_match = np.allclose(hardware_result, numpy_result.astype(np.int16), atol=1)
-power_match = np.allclose(hardware_result, power_iteration_result, atol=1)
+    results = [run_single_test(i + 1) for i in range(NUM_TESTS)]
+    matches = sum(1 for r in results if r["match"])
 
-if numpy_match:
-    print("✓ MATCH with NumPy eig(): Hardware result matches analytical solution!")
-else:
-    print("✗ MISMATCH with NumPy eig(): Hardware result differs")
-    diff = np.abs(hardware_result.astype(np.int32) - numpy_result.astype(np.int32))
-    print(f"  Differences: {diff}")
-    print(f"  Max difference: {np.max(diff)}")
+    for res in results:
+        print("-" * 80)
+        print(f"Test #{res['id']}")
+        print("Matrix A (0..15):")
+        print(res["matrix"])
+        print(f"Initial v0: {res['vector_init']}")
+        print(f"Hardware vector   : {res['hw_vec']}  (iters={res['hw_iters']})")
+        print(f"Reference vector  : {res['ref_vec']}")
+        print(f"Match             : {'YES' if res['match'] else 'NO'}")
 
-if power_match:
-    print("✓ MATCH with Power Iteration: Hardware result matches power iteration!")
-else:
-    print("✗ MISMATCH with Power Iteration: Hardware result differs")
-    diff = np.abs(hardware_result.astype(np.int32) - power_iteration_result.astype(np.int32))
-    print(f"  Differences: {diff}")
-    print(f"  Max difference: {np.max(diff)}")
-print()
+    print("=" * 80)
+    print(f"Summary: {matches}/{NUM_TESTS} tests matched the float reference after quantization.")
+    if matches == NUM_TESTS:
+        print("All tests passed ✅")
+    else:
+        print("Discrepancies detected ❌ — review matrices above.")
 
-# Show what the values represent
-print("Value interpretation (Q2.14 format):")
-print(f"  Hardware: {hardware_result} represents {hardware_result / q2_14_scale}")
-print(f"  NumPy:    {numpy_result.astype(np.int16)} represents {numpy_result / q2_14_scale}")
-print(f"  Power:    {power_iteration_result} represents {power_iteration_result / q2_14_scale}")
-print()
 
-# ========================================
-# Summary
-# ========================================
-print("=" * 60)
-print("Summary")
-print("=" * 60)
-print(f"Matrix: A = [4,1,1,1; 1,4,1,1; 1,1,4,1; 1,1,1,4]")
-print(f"Expected eigenvector (max-normalized): {dominant_eigenvector_max_norm}")
-print(f"Expected in Q2.14 format: {numpy_result.astype(np.int16)}")
-print(f"Hardware result: {hardware_result}")
-print()
-
-if numpy_match and power_match:
-    print("✓ VERIFICATION PASSED: Hardware computes correct eigenvector!")
-    print("  Both NumPy eig() and power iteration agree with hardware result.")
-else:
-    print("✗ VERIFICATION FAILED: Hardware result differs from reference")
-    if not numpy_match:
-        print("  - NumPy eig() mismatch")
-    if not power_match:
-        print("  - Power iteration mismatch")
+if __name__ == "__main__":
+    main()

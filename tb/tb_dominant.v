@@ -19,6 +19,7 @@ module tb_dominant;
 	reg signed [15:0] A10, A11, A12, A13;
 	reg signed [15:0] A20, A21, A22, A23;
 	reg signed [15:0] A30, A31, A32, A33;
+	reg signed [4*16-1:0] V_init;
 	
 	// FSM outputs
 	wire Done;
@@ -75,6 +76,7 @@ module tb_dominant;
 		.start_mult(Start_mult),
 		.start_scale(Start_scale),
 		.start_diff(Start_diff),
+		.v_init(V_init),
 		.A00(A00), .A01(A01), .A02(A02), .A03(A03),
 		.A10(A10), .A11(A11), .A12(A12), .A13(A13),
 		.A20(A20), .A21(A21), .A22(A22), .A23(A23),
@@ -118,6 +120,7 @@ module tb_dominant;
 		A10 = 16'sd1; A11 = 16'sd4; A12 = 16'sd1; A13 = 16'sd1;
 		A20 = 16'sd1; A21 = 16'sd1; A22 = 16'sd4; A23 = 16'sd1;
 		A30 = 16'sd1; A31 = 16'sd1; A32 = 16'sd1; A33 = 16'sd4;
+		V_init = {16'sd1, 16'sd1, 16'sd1, 16'sd1};
 		
 		// Initialize counters
 		clk_cnt = 0;

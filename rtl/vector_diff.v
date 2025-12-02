@@ -1,17 +1,17 @@
 `timescale 1ns / 1ps
 
-module vector_diff #(parameter WIDTH = 16) (
-    input  wire                      clk,
-    input  wire                      reset,
-    input  wire                      start,
-    input  wire signed [4*WIDTH-1:0] V_new,
-    input  wire signed [4*WIDTH-1:0] V_old,
-    output reg  signed [WIDTH-1:0]   max_diff,
-    output reg                       done
+module vector_diff #(parameter WIDTH = 4) (
+    input  wire                  clk,
+    input  wire                  reset,
+    input  wire                  start,
+    input  wire [4*WIDTH-1:0]    V_new,
+    input  wire [4*WIDTH-1:0]    V_old,
+    output reg  [WIDTH-1:0]      max_diff,
+    output reg                   done
 );
 
     // Stage 0: Register inputs to reduce routing delays
-    reg signed [4*WIDTH-1:0] V_new_reg, V_old_reg;
+    reg [4*WIDTH-1:0] V_new_reg, V_old_reg;
     reg start_stage0;
     
     always @(posedge clk) begin
@@ -27,7 +27,7 @@ module vector_diff #(parameter WIDTH = 16) (
     end
 
     // Stage 1: Compute absolute differences (combinational)
-    wire signed [4*WIDTH-1:0] d_in;
+    wire [4*WIDTH-1:0] d_in;
     abs_diff #(WIDTH) AD (
         .a(V_new_reg),
         .b(V_old_reg),
@@ -35,7 +35,7 @@ module vector_diff #(parameter WIDTH = 16) (
     );
 
     // Stage 2: Register the differences
-    reg signed [4*WIDTH-1:0] d_reg;
+    reg [4*WIDTH-1:0] d_reg;
     reg start_stage1;
     
     always @(posedge clk) begin
@@ -49,7 +49,7 @@ module vector_diff #(parameter WIDTH = 16) (
     end
 
     // Stage 3-4: Find maximum (pipelined internally in max_finder)
-    wire signed [WIDTH-1:0] maxv;
+    wire [WIDTH-1:0] maxv;
     max_finder #(WIDTH) MF (
         .clk(clk),
         .reset(reset),
@@ -78,12 +78,17 @@ module vector_diff #(parameter WIDTH = 16) (
             max_diff <= {WIDTH{1'b0}};
             done <= 1'b0;
             done_reg <= 1'b0;
-        end else if (start_stage3) begin
-            max_diff <= maxv;
-            done_reg <= 1'b1;
-            done <= 1'b1;
         end else begin
-            done <= done_reg;
+            if (start_stage0) begin
+                done_reg <= 1'b0;
+                done <= 1'b0;
+            end else if (start_stage3) begin
+                max_diff <= maxv;
+                done_reg <= 1'b1;
+                done <= 1'b1;
+            end else begin
+                done <= done_reg;
+            end
         end
     end
 

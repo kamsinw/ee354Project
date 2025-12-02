@@ -19,6 +19,7 @@ module tb_dominant_datapath;
 	reg signed [15:0] A10, A11, A12, A13;
 	reg signed [15:0] A20, A21, A22, A23;
 	reg signed [15:0] A30, A31, A32, A33;
+	reg signed [4*16-1:0] v_init;
 	
 	wire mul_done;
 	wire scale_done;
@@ -42,6 +43,7 @@ module tb_dominant_datapath;
 		.start_mult(start_mult),
 		.start_scale(start_scale),
 		.start_diff(start_diff),
+		.v_init(v_init),
 		.A00(A00), .A01(A01), .A02(A02), .A03(A03),
 		.A10(A10), .A11(A11), .A12(A12), .A13(A13),
 		.A20(A20), .A21(A21), .A22(A22), .A23(A23),
@@ -78,6 +80,7 @@ module tb_dominant_datapath;
 		start_mult = 0;
 		start_scale = 0;
 		start_diff = 0;
+		v_init = {16'sd1, 16'sd1, 16'sd1, 16'sd1};
 		
 		// Set up identity matrix
 		A00 = 16'sd1; A01 = 16'sd0; A02 = 16'sd0; A03 = 16'sd0;

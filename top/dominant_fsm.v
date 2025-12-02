@@ -8,7 +8,7 @@ module dominant_fsm (
     input  wire        mul_done,
     input  wire        scale_done,
     input  wire        diff_done,
-    input  wire signed [15:0] max_d_in,
+    input  wire        [3:0]  max_d_in,
     input  wire [2:0] epsilon,
     output reg         load_v_old,
     output reg         load_y,
@@ -32,8 +32,13 @@ module dominant_fsm (
     reg [7:0] state;
     reg start_mult_reg, start_scale_reg, start_diff_reg;
     reg [1:0] wait_max_count;
+    reg [3:0] iteration_count;
+    reg       start_prev;
     
-    wire [15:0] eps16 = {13'b0, epsilon};
+    localparam [3:0] MIN_ITERATIONS = 4'd3;
+    wire [3:0] epsilon_threshold = {1'b0, epsilon};
+    wire iterations_met = (iteration_count >= MIN_ITERATIONS);
+    wire start_rising_edge = start & ~start_prev;
     
     assign state_out = state;
 
@@ -51,7 +56,10 @@ module dominant_fsm (
             start_scale_reg <= 1'b0;
             start_diff_reg <= 1'b0;
             wait_max_count <= 2'd0;
+            iteration_count <= 4'd0;
+            start_prev <= 1'b0;
         end else begin
+            start_prev <= start;
             case (state)
                 IDLE: begin
                     load_v_old <= 1'b0;
@@ -64,7 +72,8 @@ module dominant_fsm (
                     start_mult_reg <= 1'b0;
                     start_scale_reg <= 1'b0;
                     start_diff_reg <= 1'b0;
-                    if (start) begin
+                    iteration_count <= 4'd0;
+                    if (start_rising_edge) begin
                         state <= LOAD;
                     end
                 end
@@ -156,6 +165,9 @@ module dominant_fsm (
                     if (diff_done) begin
                         start_diff_reg <= 1'b0;
                         load_max_d <= 1'b1;
+                        if (iteration_count != 4'hF) begin
+                            iteration_count <= iteration_count + 1'b1;
+                        end
                         state <= CHECK;
                     end
                 end
@@ -168,7 +180,9 @@ module dominant_fsm (
                     start_scale <= 1'b0;
                     start_diff <= 1'b0;
                     done <= 1'b0;
-                    if (max_d_in <= eps16) begin
+                    if (!iterations_met) begin
+                        state <= LOAD;
+                    end else if (max_d_in <= epsilon_threshold) begin
                         state <= DONE_ST;
                     end else begin
                         state <= LOAD;
@@ -183,6 +197,10 @@ module dominant_fsm (
                     start_scale <= 1'b0;
                     start_diff <= 1'b0;
                     done <= 1'b1;
+                    if (start_rising_edge) begin
+                        state <= LOAD;
+                        iteration_count <= 4'd0;
+                    end
                 end
 
                 default: begin

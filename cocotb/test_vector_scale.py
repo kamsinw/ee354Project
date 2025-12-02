@@ -1,6 +1,19 @@
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge, Timer
+from cocotb.triggers import RisingEdge
+
+def pack_vector(values, lane_width):
+    packed = 0
+    mask = (1 << lane_width) - 1
+    for idx, val in enumerate(values):
+        packed |= (val & mask) << (lane_width * idx)
+    return packed
+
+
+def unpack_vector(value, lane_width):
+    mask = (1 << lane_width) - 1
+    return [(value >> (lane_width * idx)) & mask for idx in range(4)]
+
 
 @cocotb.test()
 async def test_vector_scale(dut):
@@ -15,10 +28,16 @@ async def test_vector_scale(dut):
     await RisingEdge(dut.clk)
     dut.reset.value = 0
     
-    # Test: normalize [4, 8, 12, 16] (max=16)
-    # Expected: each element divided by 16, then scaled to Q1.15
-    V_in = (16 << 48) | (12 << 32) | (8 << 16) | 4
-    dut.V_in.value = V_in
+    lane_width_in = len(dut.V_in.value) // 4
+    lane_width_out = len(dut.V_out.value) // 4
+    assert lane_width_out == 4, "vector_scale should output 4-bit nibbles"
+    
+    vec = [4, 8, 12, 14]
+    norm_sq = sum(v * v for v in vec)
+    norm = int(norm_sq ** 0.5) or 1
+    
+    dut.V_in.value = pack_vector(vec, lane_width_in)
+    dut.norm_value.value = norm
     
     dut.start.value = 1
     await RisingEdge(dut.clk)
@@ -32,25 +51,9 @@ async def test_vector_scale(dut):
     
     assert dut.done.value == 1, "Scaling did not complete"
     
-    # Check that output is normalized (max absolute value should be <= 32767)
-    V_out_val = dut.V_out.value.integer
-    v0 = (V_out_val >> 0) & 0xFFFF
-    v1 = (V_out_val >> 16) & 0xFFFF
-    v2 = (V_out_val >> 32) & 0xFFFF
-    v3 = (V_out_val >> 48) & 0xFFFF
-    
-    # Sign extend
-    if v0 & 0x8000:
-        v0 = v0 - 0x10000
-    if v1 & 0x8000:
-        v1 = v1 - 0x10000
-    if v2 & 0x8000:
-        v2 = v2 - 0x10000
-    if v3 & 0x8000:
-        v3 = v3 - 0x10000
-    
-    max_abs = max(abs(v0), abs(v1), abs(v2), abs(v3))
-    assert max_abs <= 32767, f"Max absolute value {max_abs} exceeds 32767"
+    observed = unpack_vector(dut.V_out.value.integer, lane_width_out)
+    expected = [min(15, (val << 8) // norm) for val in vec]
+    assert observed == expected, f"Expected {expected}, got {observed}"
     
     print("✓ vector_scale test passed")
 

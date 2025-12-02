@@ -1,6 +1,6 @@
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge, Timer
+from cocotb.triggers import RisingEdge
 
 @cocotb.test()
 async def test_dominant_datapath(dut):
@@ -16,6 +16,13 @@ async def test_dominant_datapath(dut):
     dut.start_mult.value = 0
     dut.start_scale.value = 0
     dut.start_diff.value = 0
+    
+    # Helper to pack a Python list into the DUT's 64-bit vector format
+    def pack_vec(values):
+        packed = 0
+        for idx, val in enumerate(values):
+            packed |= (val & 0xF) << (4 * idx)
+        return packed
     
     # Set up identity matrix
     dut.A00.value = 1
@@ -34,17 +41,14 @@ async def test_dominant_datapath(dut):
     dut.A31.value = 0
     dut.A32.value = 0
     dut.A33.value = 1
+    dut.v_init.value = pack_vec([1, 1, 1, 1])
     
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     dut.reset.value = 0
     
-    # Initial vector should be [1,1,1,1] after reset
+    # Initial vector should be [1,1,1,1] after reset (4-bit unsigned)
     await RisingEdge(dut.clk)
-    v0 = dut.v0.value.signed_integer
-    v1 = dut.v1.value.signed_integer
-    v2 = dut.v2.value.signed_integer
-    v3 = dut.v3.value.signed_integer
     
     # Start matrix-vector multiply
     dut.start_mult.value = 1
