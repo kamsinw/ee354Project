@@ -1,123 +1,166 @@
 `timescale 1ns / 1ps
 
 module vector_scale #(
-    parameter integer IN_WIDTH   = 10,
+    parameter integer IN_WIDTH   = 12,
     parameter integer OUT_WIDTH  = 4,
-    parameter integer NORM_WIDTH = IN_WIDTH + 2
+    parameter integer MAX_WIDTH  = 12
 ) (
     input  wire                   clk,
     input  wire                   reset,
     input  wire                   start,
     input  wire [4*IN_WIDTH-1:0]  V_in,
-    input  wire [NORM_WIDTH-1:0]  norm_value,
+    input  wire [MAX_WIDTH-1:0]   max_value,  // Not used
     output reg  [4*OUT_WIDTH-1:0] V_out,
     output reg                    done
 );
 
-    localparam integer LANE_COUNT  = 4;
-    localparam integer SCALE_SHIFT = 8;
-    localparam integer EXT_WIDTH   = IN_WIDTH + SCALE_SHIFT;
-    localparam [OUT_WIDTH-1:0] OUT_MAX = {OUT_WIDTH{1'b1}};
+    // ========================================================================
+    // SHIFT-BASED NORMALIZATION (NO LOOKUP TABLE, NO DIVISION)
+    // ========================================================================
+    // Algorithm:
+    // 1. Find max of inputs
+    // 2. Determine position of MSB in max (priority encoder)
+    // 3. Calculate: scale_factor = 15 << (11 - msb_position)
+    // 4. For each input: output = (input × scale_factor) >> 11
+    // 5. Clamp to [0, 15]
+    //
+    // This approximates: output = (input × 15) / max
+    // By using: output = (input × 15 × 2^(11-msb)) >> 11
+    //                  ≈ (input × 15) / 2^msb
+    //                  ≈ (input × 15) / max  (since max ≈ 2^msb)
+    // ========================================================================
 
-    wire [IN_WIDTH-1:0]   lane_input   [0:LANE_COUNT-1];
-    reg  [IN_WIDTH-1:0]   lane_reg_q   [0:LANE_COUNT-1];
-    reg  [IN_WIDTH-1:0]   lane_reg_d   [0:LANE_COUNT-1];
-    wire [OUT_WIDTH-1:0]  lane_scaled  [0:LANE_COUNT-1];
-    wire [LANE_COUNT-1:0] divider_done;
-    wire [4*OUT_WIDTH-1:0] scaled_vector;
-
-    reg [NORM_WIDTH-1:0] norm_q;
-    reg [NORM_WIDTH-1:0] norm_d;
-    reg                  waiting_q;
-    reg                  waiting_d;
-    reg                  div_start_q;
-    reg                  div_start_d;
-    reg  [4*OUT_WIDTH-1:0] v_out_d;
-    reg                  done_d;
-
-    genvar lane;
-
-    generate
-        for (lane = 0; lane < LANE_COUNT; lane = lane + 1) begin : lane_logic
-            localparam integer IN_LO  = lane * IN_WIDTH;
-            localparam integer IN_HI  = IN_LO + IN_WIDTH - 1;
-            localparam integer OUT_LO = lane * OUT_WIDTH;
-            localparam integer OUT_HI = OUT_LO + OUT_WIDTH - 1;
-
-            wire [EXT_WIDTH-1:0] dividend_shifted = {lane_reg_q[lane], {SCALE_SHIFT{1'b0}}};
-            wire [OUT_WIDTH-1:0] quotient_lane;
-
-            assign lane_input[lane] = V_in[IN_HI:IN_LO];
-
-            multi_cycle_divider #(
-                .WIDTH_DIVIDEND(EXT_WIDTH),
-                .WIDTH_DIVISOR (NORM_WIDTH),
-                .WIDTH_QUOTIENT(OUT_WIDTH)
-            ) lane_divider (
-                .clk     (clk),
-                .reset   (reset),
-                .start   (div_start_q),
-                .dividend(dividend_shifted),
-                .divisor (norm_q),
-                .quotient(quotient_lane),
-                .done    (divider_done[lane])
-            );
-
-            assign lane_scaled[lane]               = (quotient_lane > OUT_MAX) ? OUT_MAX : quotient_lane;
-            assign scaled_vector[OUT_HI:OUT_LO]    = lane_scaled[lane];
-        end
-    endgenerate
-
-    wire all_dividers_done = &divider_done;
-
-    integer idx;
-
+    localparam integer LANE_COUNT = 4;
+    
+    // State machine
+    localparam [1:0] IDLE    = 2'd0;
+    localparam [1:0] COMPUTE = 2'd1;
+    
+    reg [1:0] state_q, state_d;
+    reg [4*OUT_WIDTH-1:0] v_out_d;
+    reg done_d;
+    
+    // ========================================================================
+    // STEP 1: EXTRACT INPUT LANES
+    // ========================================================================
+    wire [IN_WIDTH-1:0] lane_0 = V_in[0*IN_WIDTH +: IN_WIDTH];
+    wire [IN_WIDTH-1:0] lane_1 = V_in[1*IN_WIDTH +: IN_WIDTH];
+    wire [IN_WIDTH-1:0] lane_2 = V_in[2*IN_WIDTH +: IN_WIDTH];
+    wire [IN_WIDTH-1:0] lane_3 = V_in[3*IN_WIDTH +: IN_WIDTH];
+    
+    // ========================================================================
+    // STEP 2: FIND MAXIMUM ELEMENT
+    // ========================================================================
+    wire [IN_WIDTH-1:0] max_01 = (lane_0 > lane_1) ? lane_0 : lane_1;
+    wire [IN_WIDTH-1:0] max_23 = (lane_2 > lane_3) ? lane_2 : lane_3;
+    wire [IN_WIDTH-1:0] max_all = (max_01 > max_23) ? max_01 : max_23;
+    
+    // ========================================================================
+    // STEP 3: FIND MSB POSITION (PRIORITY ENCODER)
+    // ========================================================================
+    // Returns position of highest set bit (0-11)
+    
+    reg [3:0] msb_pos;
+    
     always @(*) begin
-        norm_d      = norm_q;
-        waiting_d   = waiting_q;
-        div_start_d = 1'b0;
-        done_d      = 1'b0;
-        v_out_d     = V_out;
-
-        for (idx = 0; idx < LANE_COUNT; idx = idx + 1) begin
-            lane_reg_d[idx] = lane_reg_q[idx];
-        end
-
-        if (start && !waiting_q) begin
-            norm_d = (norm_value == 0)
-                   ? {{(NORM_WIDTH-1){1'b0}}, 1'b1}
-                   : norm_value;
-            for (idx = 0; idx < LANE_COUNT; idx = idx + 1) begin
-                lane_reg_d[idx] = lane_input[idx];
-            end
-            waiting_d   = 1'b1;
-            div_start_d = 1'b1;
-        end else if (waiting_q && all_dividers_done) begin
-            v_out_d   = scaled_vector;
-            waiting_d = 1'b0;
-            done_d    = 1'b1;
-        end
+        if (max_all[11]) msb_pos = 4'd11;
+        else if (max_all[10]) msb_pos = 4'd10;
+        else if (max_all[9])  msb_pos = 4'd9;
+        else if (max_all[8])  msb_pos = 4'd8;
+        else if (max_all[7])  msb_pos = 4'd7;
+        else if (max_all[6])  msb_pos = 4'd6;
+        else if (max_all[5])  msb_pos = 4'd5;
+        else if (max_all[4])  msb_pos = 4'd4;
+        else if (max_all[3])  msb_pos = 4'd3;
+        else if (max_all[2])  msb_pos = 4'd2;
+        else if (max_all[1])  msb_pos = 4'd1;
+        else msb_pos = 4'd0;
     end
-
+    
+    // ========================================================================
+    // STEP 4: CALCULATE SCALE FACTOR
+    // ========================================================================
+    // scale_factor = 15 << (11 - msb_pos)
+    // This ensures max element will scale close to 15
+    
+    wire [3:0] shift_amt = (max_all == 0) ? 4'd0 : (4'd11 - msb_pos);
+    wire [14:0] scale_factor = 15'd15 << shift_amt;  // Up to 15 << 11 = 30720
+    
+    // ========================================================================
+    // STEP 5: MULTIPLY EACH LANE BY SCALE FACTOR
+    // ========================================================================
+    // product = input × scale_factor (max: 4095 × 30720 = 125,829,120 = 27 bits)
+    
+    wire [26:0] product_0 = lane_0 * scale_factor;
+    wire [26:0] product_1 = lane_1 * scale_factor;
+    wire [26:0] product_2 = lane_2 * scale_factor;
+    wire [26:0] product_3 = lane_3 * scale_factor;
+    
+    // ========================================================================
+    // STEP 6: SHIFT RIGHT AND CLAMP
+    // ========================================================================
+    // output = product >> 11 (removes the 2^11 scaling factor)
+    
+    wire [15:0] result_0 = product_0[26:11];
+    wire [15:0] result_1 = product_1[26:11];
+    wire [15:0] result_2 = product_2[26:11];
+    wire [15:0] result_3 = product_3[26:11];
+    
+    // Clamp to [0, 15]
+    wire [OUT_WIDTH-1:0] scaled_0 = (max_all == 0) ? 4'd0 :
+                                     (result_0 > 16'd15) ? 4'd15 : result_0[3:0];
+    
+    wire [OUT_WIDTH-1:0] scaled_1 = (max_all == 0) ? 4'd0 :
+                                     (result_1 > 16'd15) ? 4'd15 : result_1[3:0];
+    
+    wire [OUT_WIDTH-1:0] scaled_2 = (max_all == 0) ? 4'd0 :
+                                     (result_2 > 16'd15) ? 4'd15 : result_2[3:0];
+    
+    wire [OUT_WIDTH-1:0] scaled_3 = (max_all == 0) ? 4'd0 :
+                                     (result_3 > 16'd15) ? 4'd15 : result_3[3:0];
+    
+    wire [4*OUT_WIDTH-1:0] scaled_vector = {scaled_3, scaled_2, scaled_1, scaled_0};
+    
+    // ========================================================================
+    // CONTROL FSM (SINGLE-CYCLE OPERATION)
+    // ========================================================================
+    always @(*) begin
+        state_d = state_q;
+        v_out_d = V_out;
+        done_d  = 1'b0;
+        
+        case (state_q)
+            IDLE: begin
+                if (start) begin
+                    state_d = COMPUTE;
+                end
+            end
+            
+            COMPUTE: begin
+                // All computation is combinational
+                v_out_d = scaled_vector;
+                done_d  = 1'b1;
+                state_d = IDLE;
+            end
+            
+            default: begin
+                state_d = IDLE;
+            end
+        endcase
+    end
+    
+    // ========================================================================
+    // STATE REGISTERS
+    // ========================================================================
     always @(posedge clk) begin
         if (reset) begin
-            norm_q    <= {NORM_WIDTH{1'b0}};
-            waiting_q <= 1'b0;
-            div_start_q <= 1'b0;
-            V_out     <= {(4*OUT_WIDTH){1'b0}};
-            done      <= 1'b0;
-            for (idx = 0; idx < LANE_COUNT; idx = idx + 1) begin
-                lane_reg_q[idx] <= {IN_WIDTH{1'b0}};
-            end
+            state_q <= IDLE;
+            V_out   <= {(4*OUT_WIDTH){1'b0}};
+            done    <= 1'b0;
         end else begin
-            norm_q      <= norm_d;
-            waiting_q   <= waiting_d;
-            div_start_q <= div_start_d;
-            V_out       <= v_out_d;
-            done        <= done_d;
-            for (idx = 0; idx < LANE_COUNT; idx = idx + 1) begin
-                lane_reg_q[idx] <= lane_reg_d[idx];
-            end
+            state_q <= state_d;
+            V_out   <= v_out_d;
+            done    <= done_d;
         end
     end
 

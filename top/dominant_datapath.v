@@ -31,14 +31,14 @@ module dominant_datapath #(
     output wire [3:0]               v_old3,
     output wire                     v_new_valid_out,
     output wire [4*Y_WIDTH-1:0]     y_out,
-    output wire [Y_WIDTH+1:0]       norm_out,
+    output wire [Y_WIDTH-1:0]       max_out,
     output wire [4*SCALE_OUT-1:0]   v_new_out
 );
 
     localparam integer LANE_WIDTH   = 4;
     localparam integer VECTOR_WIDTH = 4 * LANE_WIDTH;
     localparam integer MATRIX_WIDTH = 16 * LANE_WIDTH;
-    localparam integer NORM_WIDTH   = Y_WIDTH + 2;
+    localparam integer MAX_WIDTH    = Y_WIDTH;  // Max value is same width as input
 
     wire [MATRIX_WIDTH-1:0] matrix_bus = {
         A33, A32, A31, A30,
@@ -56,8 +56,8 @@ module dominant_datapath #(
 
     reg  [1:0]           scale_state_q;
     reg  [1:0]           scale_state_d;
-    reg                  norm_start_q;
-    reg                  norm_start_d;
+    reg                  max_start_q;
+    reg                  max_start_d;
     reg                  scale_start_q;
     reg                  scale_start_d;
     reg                  scale_done_q;
@@ -68,7 +68,7 @@ module dominant_datapath #(
     reg                  v_new_valid_d;
 
     localparam [1:0] SCALE_IDLE = 2'd0;
-    localparam [1:0] SCALE_NORM = 2'd1;
+    localparam [1:0] SCALE_MAX  = 2'd1;
     localparam [1:0] SCALE_DIV  = 2'd2;
 
     wire [VECTOR_WIDTH-1:0] v_old_bus;
@@ -97,19 +97,18 @@ module dominant_datapath #(
         .done (mul_done)
     );
 
-    wire [NORM_WIDTH-1:0] norm_value;
-    wire                  norm_done;
+    wire [MAX_WIDTH-1:0] max_value;
+    wire                 max_done;
 
-    vector_norm_l2 #(
-        .WIDTH(Y_WIDTH),
-        .NORM_WIDTH(NORM_WIDTH)
-    ) vnorm (
+    vector_max #(
+        .WIDTH(Y_WIDTH)
+    ) vmax (
         .clk     (clk),
         .reset   (reset),
-        .start   (norm_start_q),
+        .start   (max_start_q),
         .V_in    (y_q),
-        .norm_out(norm_value),
-        .done    (norm_done)
+        .max_out (max_value),
+        .done    (max_done)
     );
 
     wire [4*SCALE_OUT-1:0] scaled_vector;
@@ -118,13 +117,13 @@ module dominant_datapath #(
     vector_scale #(
         .IN_WIDTH  (Y_WIDTH),
         .OUT_WIDTH (SCALE_OUT),
-        .NORM_WIDTH(NORM_WIDTH)
+        .MAX_WIDTH (MAX_WIDTH)
     ) vscale (
         .clk       (clk),
         .reset     (reset),
         .start     (scale_start_q),
         .V_in      (y_q),
-        .norm_value(norm_value),
+        .max_value (max_value),
         .V_out     (scaled_vector),
         .done      (scale_div_done)
     );
@@ -161,7 +160,7 @@ module dominant_datapath #(
 
     always @(*) begin
         scale_state_d = scale_state_q;
-        norm_start_d  = 1'b0;
+        max_start_d   = 1'b0;
         scale_start_d = 1'b0;
         scale_done_d  = 1'b0;
         v_new_d       = v_new_q;
@@ -171,13 +170,13 @@ module dominant_datapath #(
             SCALE_IDLE: begin
                 v_new_valid_d = 1'b0;
                 if (start_scale) begin
-                    norm_start_d  = 1'b1;
-                    scale_state_d = SCALE_NORM;
+                    max_start_d   = 1'b1;
+                    scale_state_d = SCALE_MAX;
                 end
             end
 
-            SCALE_NORM: begin
-                if (norm_done) begin
+            SCALE_MAX: begin
+                if (max_done) begin
                     scale_start_d = 1'b1;
                     scale_state_d = SCALE_DIV;
                 end
@@ -204,7 +203,7 @@ module dominant_datapath #(
             y_q           <= {(4*Y_WIDTH){1'b0}};
             max_diff_q    <= 4'd0;
             scale_state_q <= SCALE_IDLE;
-            norm_start_q  <= 1'b0;
+            max_start_q   <= 1'b0;
             scale_start_q <= 1'b0;
             scale_done_q  <= 1'b0;
             v_new_q       <= {(4*SCALE_OUT){1'b0}};
@@ -214,7 +213,7 @@ module dominant_datapath #(
             y_q           <= y_d;
             max_diff_q    <= max_diff_d;
             scale_state_q <= scale_state_d;
-            norm_start_q  <= norm_start_d;
+            max_start_q   <= max_start_d;
             scale_start_q <= scale_start_d;
             scale_done_q  <= scale_done_d;
             v_new_q       <= v_new_d;
@@ -226,7 +225,7 @@ module dominant_datapath #(
     assign max_d_out       = max_diff_q;
     assign v_new_valid_out = v_new_valid_q;
     assign y_out           = y_q;
-    assign norm_out        = norm_value;
+    assign max_out         = max_value;
     assign v_new_out       = v_new_q;
     assign {v3, v2, v1, v0} = v_new_q[VECTOR_WIDTH-1:0];
     assign {v_old3, v_old2, v_old1, v_old0} = v_old_bus;
