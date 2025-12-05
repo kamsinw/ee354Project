@@ -57,10 +57,10 @@ async def test_dominant_full(dut):
     assert converged, f"Computation did not converge after {iterations} cycles"
     
     # Check that vector has converged (all elements should be approximately equal)
-    v0 = dut.v0.value.signed_integer
-    v1 = dut.v1.value.signed_integer
-    v2 = dut.v2.value.signed_integer
-    v3 = dut.v3.value.signed_integer
+    v0 = dut.v0.value.integer
+    v1 = dut.v1.value.integer
+    v2 = dut.v2.value.integer
+    v3 = dut.v3.value.integer
     
     # For the test matrix, eigenvector should be [1,1,1,1] (normalized)
     # Allow some tolerance due to fixed-point arithmetic
@@ -68,7 +68,7 @@ async def test_dominant_full(dut):
                    abs(v1 - v2), abs(v1 - v3), abs(v2 - v3))
     
     # Elements should be close to each other (within reasonable tolerance)
-    assert max_diff < 1000, f"Vector elements differ too much: [{v0},{v1},{v2},{v3}], max_diff={max_diff}"
+    assert max_diff <= 1, f"Vector elements differ too much: [{v0},{v1},{v2},{v3}], max_diff={max_diff}"
     
     print(f"✓ Full system test passed after {iterations} cycles")
     print(f"  Final vector: [{v0}, {v1}, {v2}, {v3}]")

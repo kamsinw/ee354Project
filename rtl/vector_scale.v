@@ -1,156 +1,166 @@
 `timescale 1ns / 1ps
 
-module vector_scale #(parameter WIDTH = 16) (
-    input  wire                      clk,
-    input  wire                      reset,
-    input  wire                      start,
-    input  wire signed [4*WIDTH-1:0] V_in,
-    output reg  signed [4*WIDTH-1:0] V_out,
-    output reg                       done
+module vector_scale #(
+    parameter integer IN_WIDTH   = 12,
+    parameter integer OUT_WIDTH  = 4,
+    parameter integer MAX_WIDTH  = 12
+) (
+    input  wire                   clk,
+    input  wire                   reset,
+    input  wire                   start,
+    input  wire [4*IN_WIDTH-1:0]  V_in,
+    input  wire [MAX_WIDTH-1:0]   max_value,  // Not used
+    output reg  [4*OUT_WIDTH-1:0] V_out,
+    output reg                    done
 );
 
-    wire signed [WIDTH-1:0] max_val;
+    // ========================================================================
+    // SHIFT-BASED NORMALIZATION (NO LOOKUP TABLE, NO DIVISION)
+    // ========================================================================
+    // Algorithm:
+    // 1. Find max of inputs
+    // 2. Determine position of MSB in max (priority encoder)
+    // 3. Calculate: scale_factor = 15 << (11 - msb_position)
+    // 4. For each input: output = (input × scale_factor) >> 11
+    // 5. Clamp to [0, 15]
+    //
+    // This approximates: output = (input × 15) / max
+    // By using: output = (input × 15 × 2^(11-msb)) >> 11
+    //                  ≈ (input × 15) / 2^msb
+    //                  ≈ (input × 15) / max  (since max ≈ 2^msb)
+    // ========================================================================
 
-    max_finder #(WIDTH) MF (
-        .clk(clk),
-        .reset(reset),
-        .a(V_in),
-        .max_val(max_val)
-    );
-
-    wire signed [WIDTH-1:0] V_in0 = V_in[WIDTH-1:0];
-    wire signed [WIDTH-1:0] V_in1 = V_in[2*WIDTH-1:WIDTH];
-    wire signed [WIDTH-1:0] V_in2 = V_in[3*WIDTH-1:2*WIDTH];
-    wire signed [WIDTH-1:0] V_in3 = V_in[4*WIDTH-1:3*WIDTH];
-
-    wire signed [WIDTH-1:0] scale = max_val;
+    localparam integer LANE_COUNT = 4;
     
-    // NARROW CLOCK DESIGN: Multi-cycle division to break long combinational paths
-    // Stage 1: Prepare inputs (combinational, fast)
-    wire signed [23:0] V_in0_ext = {{8{V_in0[15]}}, V_in0};
-    wire signed [23:0] V_in1_ext = {{8{V_in1[15]}}, V_in1};
-    wire signed [23:0] V_in2_ext = {{8{V_in2[15]}}, V_in2};
-    wire signed [23:0] V_in3_ext = {{8{V_in3[15]}}, V_in3};
+    // State machine
+    localparam [1:0] IDLE    = 2'd0;
+    localparam [1:0] COMPUTE = 2'd1;
     
-    wire signed [23:0] V_in0_shifted = V_in0_ext << 14;
-    wire signed [23:0] V_in1_shifted = V_in1_ext << 14;
-    wire signed [23:0] V_in2_shifted = V_in2_ext << 14;
-    wire signed [23:0] V_in3_shifted = V_in3_ext << 14;
+    reg [1:0] state_q, state_d;
+    reg [4*OUT_WIDTH-1:0] v_out_d;
+    reg done_d;
     
-    wire signed [23:0] scale_ext = {8'b0, scale};
+    // ========================================================================
+    // STEP 1: EXTRACT INPUT LANES
+    // ========================================================================
+    wire [IN_WIDTH-1:0] lane_0 = V_in[0*IN_WIDTH +: IN_WIDTH];
+    wire [IN_WIDTH-1:0] lane_1 = V_in[1*IN_WIDTH +: IN_WIDTH];
+    wire [IN_WIDTH-1:0] lane_2 = V_in[2*IN_WIDTH +: IN_WIDTH];
+    wire [IN_WIDTH-1:0] lane_3 = V_in[3*IN_WIDTH +: IN_WIDTH];
     
-    // NARROW CLOCK DESIGN: Use dedicated multi-cycle divider modules
-    // This breaks long combinational paths by doing division over multiple cycles
-    wire signed [19:0] div_result0, div_result1, div_result2, div_result3;
-    wire div_done0, div_done1, div_done2, div_done3;
-    reg div_start;
+    // ========================================================================
+    // STEP 2: FIND MAXIMUM ELEMENT
+    // ========================================================================
+    wire [IN_WIDTH-1:0] max_01 = (lane_0 > lane_1) ? lane_0 : lane_1;
+    wire [IN_WIDTH-1:0] max_23 = (lane_2 > lane_3) ? lane_2 : lane_3;
+    wire [IN_WIDTH-1:0] max_all = (max_01 > max_23) ? max_01 : max_23;
     
-    multi_cycle_divider #(
-        .WIDTH_DIVIDEND(24),
-        .WIDTH_DIVISOR(24),
-        .WIDTH_QUOTIENT(20)
-    ) div0 (
-        .clk(clk),
-        .reset(reset),
-        .start(div_start && (scale > 0)),
-        .dividend(V_in0_shifted),
-        .divisor(scale_ext),
-        .quotient(div_result0),
-        .done(div_done0)
-    );
+    // ========================================================================
+    // STEP 3: FIND MSB POSITION (PRIORITY ENCODER)
+    // ========================================================================
+    // Returns position of highest set bit (0-11)
     
-    multi_cycle_divider #(
-        .WIDTH_DIVIDEND(24),
-        .WIDTH_DIVISOR(24),
-        .WIDTH_QUOTIENT(20)
-    ) div1 (
-        .clk(clk),
-        .reset(reset),
-        .start(div_start && (scale > 0)),
-        .dividend(V_in1_shifted),
-        .divisor(scale_ext),
-        .quotient(div_result1),
-        .done(div_done1)
-    );
+    reg [3:0] msb_pos;
     
-    multi_cycle_divider #(
-        .WIDTH_DIVIDEND(24),
-        .WIDTH_DIVISOR(24),
-        .WIDTH_QUOTIENT(20)
-    ) div2 (
-        .clk(clk),
-        .reset(reset),
-        .start(div_start && (scale > 0)),
-        .dividend(V_in2_shifted),
-        .divisor(scale_ext),
-        .quotient(div_result2),
-        .done(div_done2)
-    );
+    always @(*) begin
+        if (max_all[11]) msb_pos = 4'd11;
+        else if (max_all[10]) msb_pos = 4'd10;
+        else if (max_all[9])  msb_pos = 4'd9;
+        else if (max_all[8])  msb_pos = 4'd8;
+        else if (max_all[7])  msb_pos = 4'd7;
+        else if (max_all[6])  msb_pos = 4'd6;
+        else if (max_all[5])  msb_pos = 4'd5;
+        else if (max_all[4])  msb_pos = 4'd4;
+        else if (max_all[3])  msb_pos = 4'd3;
+        else if (max_all[2])  msb_pos = 4'd2;
+        else if (max_all[1])  msb_pos = 4'd1;
+        else msb_pos = 4'd0;
+    end
     
-    multi_cycle_divider #(
-        .WIDTH_DIVIDEND(24),
-        .WIDTH_DIVISOR(24),
-        .WIDTH_QUOTIENT(20)
-    ) div3 (
-        .clk(clk),
-        .reset(reset),
-        .start(div_start && (scale > 0)),
-        .dividend(V_in3_shifted),
-        .divisor(scale_ext),
-        .quotient(div_result3),
-        .done(div_done3)
-    );
+    // ========================================================================
+    // STEP 4: CALCULATE SCALE FACTOR
+    // ========================================================================
+    // scale_factor = 15 << (11 - msb_pos)
+    // This ensures max element will scale close to 15
     
-    // Handle scale <= 0 case
-    wire signed [19:0] div_result0_final = (scale > 0) ? div_result0 : V_in0_ext[19:0];
-    wire signed [19:0] div_result1_final = (scale > 0) ? div_result1 : V_in1_ext[19:0];
-    wire signed [19:0] div_result2_final = (scale > 0) ? div_result2 : V_in2_ext[19:0];
-    wire signed [19:0] div_result3_final = (scale > 0) ? div_result3 : V_in3_ext[19:0];
+    wire [3:0] shift_amt = (max_all == 0) ? 4'd0 : (4'd11 - msb_pos);
+    wire [14:0] scale_factor = 15'd15 << shift_amt;  // Up to 15 << 11 = 30720
     
-    // Clamping (combinational, but simple)
-    wire signed [15:0] V_out0_final = (div_result0_final[19:15] == 5'b00000 || div_result0_final[19:15] == 5'b11111) ? 
-                                      div_result0_final[15:0] : ((div_result0_final[19]) ? 16'sd32768 : 16'sd32767);
-    wire signed [15:0] V_out1_final = (div_result1_final[19:15] == 5'b00000 || div_result1_final[19:15] == 5'b11111) ? 
-                                      div_result1_final[15:0] : ((div_result1_final[19]) ? 16'sd32768 : 16'sd32767);
-    wire signed [15:0] V_out2_final = (div_result2_final[19:15] == 5'b00000 || div_result2_final[19:15] == 5'b11111) ? 
-                                      div_result2_final[15:0] : ((div_result2_final[19]) ? 16'sd32768 : 16'sd32767);
-    wire signed [15:0] V_out3_final = (div_result3_final[19:15] == 5'b00000 || div_result3_final[19:15] == 5'b11111) ? 
-                                      div_result3_final[15:0] : ((div_result3_final[19]) ? 16'sd32768 : 16'sd32767);
+    // ========================================================================
+    // STEP 5: MULTIPLY EACH LANE BY SCALE FACTOR
+    // ========================================================================
+    // product = input × scale_factor (max: 4095 × 30720 = 125,829,120 = 27 bits)
     
-    // Control logic: wait for all dividers to complete
-    reg waiting_for_div;
+    wire [26:0] product_0 = lane_0 * scale_factor;
+    wire [26:0] product_1 = lane_1 * scale_factor;
+    wire [26:0] product_2 = lane_2 * scale_factor;
+    wire [26:0] product_3 = lane_3 * scale_factor;
     
+    // ========================================================================
+    // STEP 6: SHIFT RIGHT AND CLAMP
+    // ========================================================================
+    // output = product >> 11 (removes the 2^11 scaling factor)
+    
+    wire [15:0] result_0 = product_0[26:11];
+    wire [15:0] result_1 = product_1[26:11];
+    wire [15:0] result_2 = product_2[26:11];
+    wire [15:0] result_3 = product_3[26:11];
+    
+    // Clamp to [0, 15]
+    wire [OUT_WIDTH-1:0] scaled_0 = (max_all == 0) ? 4'd0 :
+                                     (result_0 > 16'd15) ? 4'd15 : result_0[3:0];
+    
+    wire [OUT_WIDTH-1:0] scaled_1 = (max_all == 0) ? 4'd0 :
+                                     (result_1 > 16'd15) ? 4'd15 : result_1[3:0];
+    
+    wire [OUT_WIDTH-1:0] scaled_2 = (max_all == 0) ? 4'd0 :
+                                     (result_2 > 16'd15) ? 4'd15 : result_2[3:0];
+    
+    wire [OUT_WIDTH-1:0] scaled_3 = (max_all == 0) ? 4'd0 :
+                                     (result_3 > 16'd15) ? 4'd15 : result_3[3:0];
+    
+    wire [4*OUT_WIDTH-1:0] scaled_vector = {scaled_3, scaled_2, scaled_1, scaled_0};
+    
+    // ========================================================================
+    // CONTROL FSM (SINGLE-CYCLE OPERATION)
+    // ========================================================================
+    always @(*) begin
+        state_d = state_q;
+        v_out_d = V_out;
+        done_d  = 1'b0;
+        
+        case (state_q)
+            IDLE: begin
+                if (start) begin
+                    state_d = COMPUTE;
+                end
+            end
+            
+            COMPUTE: begin
+                // All computation is combinational
+                v_out_d = scaled_vector;
+                done_d  = 1'b1;
+                state_d = IDLE;
+            end
+            
+            default: begin
+                state_d = IDLE;
+            end
+        endcase
+    end
+    
+    // ========================================================================
+    // STATE REGISTERS
+    // ========================================================================
     always @(posedge clk) begin
         if (reset) begin
-            div_start <= 1'b0;
-            waiting_for_div <= 1'b0;
-            V_out <= {(4*WIDTH){1'b0}};
-            done <= 1'b0;
-        end else if (start) begin
-            div_start <= 1'b1;
-            if (scale > 0) begin
-                waiting_for_div <= 1'b1;
-                done <= 1'b0;
-            end else begin
-                // No division needed, output immediately
-                V_out <= {V_out3_final, V_out2_final, V_out1_final, V_out0_final};
-                done <= 1'b1;
-                waiting_for_div <= 1'b0;
-            end
+            state_q <= IDLE;
+            V_out   <= {(4*OUT_WIDTH){1'b0}};
+            done    <= 1'b0;
         end else begin
-            div_start <= 1'b0;
-            if (waiting_for_div) begin
-                if (div_done0 && div_done1 && div_done2 && div_done3) begin
-                    // All divisions complete
-                    V_out <= {V_out3_final, V_out2_final, V_out1_final, V_out0_final};
-                    done <= 1'b1;
-                    waiting_for_div <= 1'b0;
-                end else begin
-                    done <= 1'b0;
-                end
-            end else begin
-                done <= 1'b0;
-            end
+            state_q <= state_d;
+            V_out   <= v_out_d;
+            done    <= done_d;
         end
     end
 

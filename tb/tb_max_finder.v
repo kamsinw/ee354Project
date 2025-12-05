@@ -22,8 +22,8 @@ module tb_max_finder;
 	// ========================================
 	
 	max_finder #(.WIDTH(WIDTH)) uut (
-		.a(a),
-		.max_val(max_val)
+		.lane_values(a),
+		.max_value  (max_val)
 	);
 	
 	// Unpack signals

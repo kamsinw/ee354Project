@@ -116,19 +116,19 @@ module tb_top_eigenvector;
 		$display("  Cursor moved to [1][2], value set to 10");
 		$display("  PASS\n");
 		
-		$display("Test 4: Edit Vector v - Set element [2] to -5");
+		$display("Test 4: Edit Vector v - Set element [2] to 5");
 		sw1 = 1;
 		repeat(20000) @(posedge clk);
 		press_btnd;
 		repeat(20000) @(posedge clk);
 		press_btnd;
 		repeat(20000) @(posedge clk);
-		repeat(6) begin
-			press_btnl;
+		repeat(4) begin
+			press_btnr;
 		end
 		press_btnc;
 		repeat(20000) @(posedge clk);
-		$display("  Vector v[2] should be -5");
+		$display("  Vector v[2] should be 5");
 		$display("  PASS\n");
 		
 		$display("Test 5: Cursor boundary checks");

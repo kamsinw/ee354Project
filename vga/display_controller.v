@@ -18,17 +18,168 @@ module display_controller (
     input  wire sw0,
     input  wire sw1,
     input  wire [2:0] sw_eps,
-    input  wire signed [255:0] matrix_a,
-    input  wire signed [63:0] vector_v,   // Editable initial vector
+    input  wire [63:0] matrix_a,
+    input  wire [15:0] vector_v,   // Editable initial vector
     input  wire [7:0] fsm_state,
     input  wire fsm_done,
     input  wire [7:0] iteration_count,
-    input  wire signed [63:0] v_old,      // Previous iteration (for chart)
-    input  wire signed [63:0] v_new,      // Current iteration result (for chart)
+    input  wire [15:0] v_old,      // Previous iteration (for chart)
+    input  wire [15:0] v_new,      // Current iteration result (for chart)
     output reg  [11:0] rgb
 );
 
     // ========================================================================
+    // HELPER FUNCTIONS
+    // ========================================================================
+
+    // Convert unsigned 16-bit value to 5-digit BCD (20 bits, [19:16]=ten-thousands)
+    function [19:0] bin16_to_bcd;
+        input [15:0] value;
+        integer idx;
+        reg [35:0] shift_reg;
+        begin
+            shift_reg = 36'd0;
+            shift_reg[15:0] = value;
+            for (idx = 0; idx < 16; idx = idx + 1) begin
+                if (shift_reg[19:16] >= 5) shift_reg[19:16] = shift_reg[19:16] + 3;
+                if (shift_reg[23:20] >= 5) shift_reg[23:20] = shift_reg[23:20] + 3;
+                if (shift_reg[27:24] >= 5) shift_reg[27:24] = shift_reg[27:24] + 3;
+                if (shift_reg[31:28] >= 5) shift_reg[31:28] = shift_reg[31:28] + 3;
+                if (shift_reg[35:32] >= 5) shift_reg[35:32] = shift_reg[35:32] + 3;
+                shift_reg = shift_reg << 1;
+            end
+            bin16_to_bcd = shift_reg[35:16];
+        end
+    endfunction
+
+    // 5x7 font pattern for digits 0-9
+    function font_bit;
+        input [3:0] digit;
+        input [2:0] x;
+        input [2:0] y;
+        reg [4:0] row_bits;
+        begin
+            row_bits = 5'b00000;
+            case (digit)
+                4'd0: case (y)
+                    0: row_bits = 5'b01110;
+                    1: row_bits = 5'b10001;
+                    2: row_bits = 5'b10011;
+                    3: row_bits = 5'b10101;
+                    4: row_bits = 5'b11001;
+                    5: row_bits = 5'b10001;
+                    6: row_bits = 5'b01110;
+                endcase
+                4'd1: case (y)
+                    0: row_bits = 5'b00100;
+                    1: row_bits = 5'b01100;
+                    2: row_bits = 5'b00100;
+                    3: row_bits = 5'b00100;
+                    4: row_bits = 5'b00100;
+                    5: row_bits = 5'b00100;
+                    6: row_bits = 5'b01110;
+                endcase
+                4'd2: case (y)
+                    0: row_bits = 5'b01110;
+                    1: row_bits = 5'b10001;
+                    2: row_bits = 5'b00001;
+                    3: row_bits = 5'b00110;
+                    4: row_bits = 5'b01000;
+                    5: row_bits = 5'b10000;
+                    6: row_bits = 5'b11111;
+                endcase
+                4'd3: case (y)
+                    0: row_bits = 5'b11110;
+                    1: row_bits = 5'b00001;
+                    2: row_bits = 5'b00001;
+                    3: row_bits = 5'b01110;
+                    4: row_bits = 5'b00001;
+                    5: row_bits = 5'b00001;
+                    6: row_bits = 5'b11110;
+                endcase
+                4'd4: case (y)
+                    0: row_bits = 5'b00010;
+                    1: row_bits = 5'b00110;
+                    2: row_bits = 5'b01010;
+                    3: row_bits = 5'b10010;
+                    4: row_bits = 5'b11111;
+                    5: row_bits = 5'b00010;
+                    6: row_bits = 5'b00010;
+                endcase
+                4'd5: case (y)
+                    0: row_bits = 5'b11111;
+                    1: row_bits = 5'b10000;
+                    2: row_bits = 5'b11110;
+                    3: row_bits = 5'b00001;
+                    4: row_bits = 5'b00001;
+                    5: row_bits = 5'b10001;
+                    6: row_bits = 5'b01110;
+                endcase
+                4'd6: case (y)
+                    0: row_bits = 5'b01110;
+                    1: row_bits = 5'b10000;
+                    2: row_bits = 5'b11110;
+                    3: row_bits = 5'b10001;
+                    4: row_bits = 5'b10001;
+                    5: row_bits = 5'b10001;
+                    6: row_bits = 5'b01110;
+                endcase
+                4'd7: case (y)
+                    0: row_bits = 5'b11111;
+                    1: row_bits = 5'b00001;
+                    2: row_bits = 5'b00010;
+                    3: row_bits = 5'b00100;
+                    4: row_bits = 5'b01000;
+                    5: row_bits = 5'b10000;
+                    6: row_bits = 5'b10000;
+                endcase
+                4'd8: case (y)
+                    0: row_bits = 5'b01110;
+                    1: row_bits = 5'b10001;
+                    2: row_bits = 5'b10001;
+                    3: row_bits = 5'b01110;
+                    4: row_bits = 5'b10001;
+                    5: row_bits = 5'b10001;
+                    6: row_bits = 5'b01110;
+                endcase
+                4'd9: case (y)
+                    0: row_bits = 5'b01110;
+                    1: row_bits = 5'b10001;
+                    2: row_bits = 5'b10001;
+                    3: row_bits = 5'b01111;
+                    4: row_bits = 5'b00001;
+                    5: row_bits = 5'b00001;
+                    6: row_bits = 5'b01110;
+                endcase
+                default: row_bits = 5'b00000;
+            endcase
+            if ((x < FONT_BASE_W) && (y < FONT_BASE_H))
+                font_bit = row_bits[FONT_BASE_W-1 - x];
+            else
+                font_bit = 1'b0;
+        end
+    endfunction
+
+    // Render scaled font pixel
+    function digit_bitmap_pixel;
+        input [3:0] digit;
+        input [9:0] local_x;
+        input [9:0] local_y;
+        input [1:0] scale_shift; // 0=original size, 1=double, etc.
+        reg [2:0] glyph_x;
+        reg [2:0] glyph_y;
+        begin
+            if ((local_x < (FONT_BASE_W << scale_shift)) &&
+                (local_y < (FONT_BASE_H << scale_shift))) begin
+                glyph_x = local_x >> scale_shift;
+                glyph_y = local_y >> scale_shift;
+                digit_bitmap_pixel = font_bit(digit, glyph_x, glyph_y);
+            end else begin
+                digit_bitmap_pixel = 1'b0;
+            end
+        end
+    endfunction
+
     // COLORS
     // ========================================================================
     parameter BLACK   = 12'b0000_0000_0000;
@@ -41,6 +192,11 @@ module display_controller (
     parameter GRAY    = 12'b0100_0100_0100;
     parameter BLUE    = 12'b0011_0011_1111;
     parameter ORANGE  = 12'b1111_1000_0000;
+
+    // Small digit rendering parameters (5x7 font scaled as needed)
+    localparam integer FONT_BASE_W = 5;
+    localparam integer FONT_BASE_H = 7;
+    localparam integer DIGIT_COUNT = 5;  // Show up to 5 decimal digits (covers 16-bit range)
 
     // ========================================================================
     // SCREEN LAYOUT CONSTANTS - Visible area: 640 x 480 pixels
@@ -91,49 +247,117 @@ module display_controller (
     // UNPACK INPUT DATA
     // ========================================================================
     // Matrix A (4x4) - editable with sw1=0
-    wire signed [15:0] A [0:3][0:3];
-    assign A[0][0] = matrix_a[15:0];
-    assign A[0][1] = matrix_a[31:16];
-    assign A[0][2] = matrix_a[47:32];
-    assign A[0][3] = matrix_a[63:48];
-    assign A[1][0] = matrix_a[79:64];
-    assign A[1][1] = matrix_a[95:80];
-    assign A[1][2] = matrix_a[111:96];
-    assign A[1][3] = matrix_a[127:112];
-    assign A[2][0] = matrix_a[143:128];
-    assign A[2][1] = matrix_a[159:144];
-    assign A[2][2] = matrix_a[175:160];
-    assign A[2][3] = matrix_a[191:176];
-    assign A[3][0] = matrix_a[207:192];
-    assign A[3][1] = matrix_a[223:208];
-    assign A[3][2] = matrix_a[239:224];
-    assign A[3][3] = matrix_a[255:240];
+    wire [3:0] A [0:3][0:3];
+    assign A[0][0] = matrix_a[3:0];
+    assign A[0][1] = matrix_a[7:4];
+    assign A[0][2] = matrix_a[11:8];
+    assign A[0][3] = matrix_a[15:12];
+    assign A[1][0] = matrix_a[19:16];
+    assign A[1][1] = matrix_a[23:20];
+    assign A[1][2] = matrix_a[27:24];
+    assign A[1][3] = matrix_a[31:28];
+    assign A[2][0] = matrix_a[35:32];
+    assign A[2][1] = matrix_a[39:36];
+    assign A[2][2] = matrix_a[43:40];
+    assign A[2][3] = matrix_a[47:44];
+    assign A[3][0] = matrix_a[51:48];
+    assign A[3][1] = matrix_a[55:52];
+    assign A[3][2] = matrix_a[59:56];
+    assign A[3][3] = matrix_a[63:60];
     
     // Vector v (editable initial vector) - editable with sw1=1
-    wire signed [15:0] v [0:3];
-    assign v[0] = vector_v[15:0];
-    assign v[1] = vector_v[31:16];
-    assign v[2] = vector_v[47:32];
-    assign v[3] = vector_v[63:48];
+    wire [3:0] v [0:3];
+    assign v[0] = vector_v[3:0];
+    assign v[1] = vector_v[7:4];
+    assign v[2] = vector_v[11:8];
+    assign v[3] = vector_v[15:12];
     
     // v_old (previous iteration - for bar chart)
-    wire signed [15:0] vo [0:3];
-    assign vo[0] = v_old[15:0];
-    assign vo[1] = v_old[31:16];
-    assign vo[2] = v_old[47:32];
-    assign vo[3] = v_old[63:48];
+    wire [3:0] vo [0:3];
+    assign vo[0] = v_old[3:0];
+    assign vo[1] = v_old[7:4];
+    assign vo[2] = v_old[11:8];
+    assign vo[3] = v_old[15:12];
     
     // v_new (current iteration result - for bar chart and display)
-    wire signed [15:0] vn [0:3];
-    assign vn[0] = v_new[15:0];
-    assign vn[1] = v_new[31:16];
-    assign vn[2] = v_new[47:32];
-    assign vn[3] = v_new[63:48];
+    wire [3:0] vn [0:3];
+    assign vn[0] = v_new[3:0];
+    assign vn[1] = v_new[7:4];
+    assign vn[2] = v_new[11:8];
+    assign vn[3] = v_new[15:12];
     
     // FSM state
     localparam IDLE = 7'b0000001;
     // Edit mode: sw0=0 means we're in edit mode
     wire state_edit = (sw0 == 1'b0);
+
+    // Precomputed decimal digits for matrix and vectors (tens/ones only)
+    reg [3:0] mat_digit_tens [0:3][0:3];
+    reg [3:0] mat_digit_ones [0:3][0:3];
+
+    reg [3:0] vec_digit_tens [0:3];
+    reg [3:0] vec_digit_ones [0:3];
+
+    reg [3:0] vnew_digit_tens [0:3];
+    reg [3:0] vnew_digit_ones [0:3];
+
+    integer mi, mj;
+
+    always @(*) begin
+        for (mi = 0; mi < 4; mi = mi + 1) begin
+            vec_digit_tens[mi] = v[mi] / 10;
+            vec_digit_ones[mi] = v[mi] % 10;
+        end
+
+        for (mi = 0; mi < 4; mi = mi + 1) begin
+            vnew_digit_tens[mi] = vn[mi] / 10;
+            vnew_digit_ones[mi] = vn[mi] % 10;
+        end
+
+        for (mi = 0; mi < 4; mi = mi + 1) begin
+            for (mj = 0; mj < 4; mj = mj + 1) begin
+                mat_digit_tens[mi][mj] = A[mi][mj] / 10;
+                mat_digit_ones[mi][mj] = A[mi][mj] % 10;
+            end
+        end
+    end
+
+    function [3:0] get_vec_digit;
+        input [1:0] row;
+        input [1:0] slot;
+        begin
+            case (slot)
+                2'd0: get_vec_digit = vec_digit_tens[row];
+                2'd1: get_vec_digit = vec_digit_ones[row];
+                default: get_vec_digit = 4'd0;
+            endcase
+        end
+    endfunction
+
+    function [3:0] get_vnew_digit;
+        input [1:0] row;
+        input [1:0] slot;
+        begin
+            case (slot)
+                2'd0: get_vnew_digit = vnew_digit_tens[row];
+                2'd1: get_vnew_digit = vnew_digit_ones[row];
+                default: get_vnew_digit = 4'd0;
+            endcase
+        end
+    endfunction
+
+    function [3:0] get_mat_digit;
+        input [1:0] row;
+        input [1:0] col;
+        input [1:0] slot;
+        begin
+            case (slot)
+                2'd0: get_mat_digit = mat_digit_tens[row][col];
+                2'd1: get_mat_digit = mat_digit_ones[row][col];
+                default: get_mat_digit = 4'd0;
+            endcase
+        end
+    endfunction
 
     // ========================================================================
     // REGION DETECTION
@@ -171,60 +395,36 @@ module display_controller (
                                ((vec_v_local_y < 4) || (vec_v_local_y >= vec_v_height - 4) || (vec_v_local_x >= vec_v_width - 3));
     
     // Get vector v value for current row (this is what you EDIT)
-    reg signed [15:0] vec_v_val;
-    always @(*) begin
-        case (vec_v_idx)
-            2'd0: vec_v_val = v[0];
-            2'd1: vec_v_val = v[1];
-            2'd2: vec_v_val = v[2];
-            2'd3: vec_v_val = v[3];
-        endcase
-    end
+    // Current editable vector element (unsigned values only)
     
-    wire vec_v_is_neg = vec_v_val[15];
-    wire [15:0] vec_v_abs = vec_v_is_neg ? -vec_v_val : vec_v_val;
-    wire [3:0] vec_v_digit = vec_v_abs % 10;
+    // Multi-digit rendering for editable vector (5 decimal digits)
+    localparam integer VEC_DIGIT_SCALE   = 1; // 2x scale
+    localparam integer VEC_DIGIT_WIDTH   = FONT_BASE_W << VEC_DIGIT_SCALE;  // 10
+    localparam integer VEC_DIGIT_HEIGHT  = FONT_BASE_H << VEC_DIGIT_SCALE;  // 14
+    localparam integer VEC_DIGIT_SPACING = 3;
+    localparam integer VEC_DIGIT_X_START = 18;
+    localparam integer VEC_DIGIT_Y_OFF   = 10;
     
-    // Digit rendering for vector v
-    wire [9:0] vv_dig_x = vec_v_local_x - 30;
-    wire [9:0] vv_dig_y = vec_v_cell_y - 8;
-    wire in_vv_digit_area = in_vec_v_region && vec_v_valid_idx &&
-                            (vec_v_local_x >= 30) && (vec_v_local_x < 70) &&
-                            (vec_v_cell_y >= 8) && (vec_v_cell_y < 38);
+    wire vec_digit_band = in_vec_v_region && vec_v_valid_idx &&
+                          (vec_v_cell_y >= VEC_DIGIT_Y_OFF) && (vec_v_cell_y < VEC_DIGIT_Y_OFF + VEC_DIGIT_HEIGHT);
+    wire [9:0] vec_digit_local_y = vec_v_cell_y - VEC_DIGIT_Y_OFF;
     
-    // 7-segment for vector v
-    wire vv_seg_a = in_vv_digit_area && (vv_dig_y < 4) && (vv_dig_x >= 4) && (vv_dig_x < 32);
-    wire vv_seg_b = in_vv_digit_area && (vv_dig_x >= 32) && (vv_dig_y >= 2) && (vv_dig_y < 14);
-    wire vv_seg_c = in_vv_digit_area && (vv_dig_x >= 32) && (vv_dig_y >= 17) && (vv_dig_y < 28);
-    wire vv_seg_d = in_vv_digit_area && (vv_dig_y >= 26) && (vv_dig_x >= 4) && (vv_dig_x < 32);
-    wire vv_seg_e = in_vv_digit_area && (vv_dig_x < 4) && (vv_dig_y >= 17) && (vv_dig_y < 28);
-    wire vv_seg_f = in_vv_digit_area && (vv_dig_x < 4) && (vv_dig_y >= 2) && (vv_dig_y < 14);
-    wire vv_seg_g = in_vv_digit_area && (vv_dig_y >= 13) && (vv_dig_y < 18) && (vv_dig_x >= 4) && (vv_dig_x < 32);
+    wire vec_digit0_pix = vec_digit_band &&
+                      (vec_v_local_x >= VEC_DIGIT_X_START) &&
+                      (vec_v_local_x < VEC_DIGIT_X_START + VEC_DIGIT_WIDTH) &&
+                      digit_bitmap_pixel(get_vec_digit(vec_v_idx, 2'd0),
+                                         vec_v_local_x - VEC_DIGIT_X_START,
+                                         vec_digit_local_y,
+                                         VEC_DIGIT_SCALE);
+    wire vec_digit1_pix = vec_digit_band &&
+                      (vec_v_local_x >= VEC_DIGIT_X_START + (VEC_DIGIT_WIDTH + VEC_DIGIT_SPACING)) &&
+                      (vec_v_local_x < VEC_DIGIT_X_START + (VEC_DIGIT_WIDTH + VEC_DIGIT_SPACING) + VEC_DIGIT_WIDTH) &&
+                      digit_bitmap_pixel(get_vec_digit(vec_v_idx, 2'd1),
+                                         vec_v_local_x - (VEC_DIGIT_X_START + (VEC_DIGIT_WIDTH + VEC_DIGIT_SPACING)),
+                                         vec_digit_local_y,
+                                         VEC_DIGIT_SCALE);
     
-    reg [6:0] vv_seg_en;
-    always @(*) begin
-        case (vec_v_digit)
-            4'd0: vv_seg_en = 7'b1111110;
-            4'd1: vv_seg_en = 7'b0110000;
-            4'd2: vv_seg_en = 7'b1101101;
-            4'd3: vv_seg_en = 7'b1111001;
-            4'd4: vv_seg_en = 7'b0110011;
-            4'd5: vv_seg_en = 7'b1011011;
-            4'd6: vv_seg_en = 7'b1011111;
-            4'd7: vv_seg_en = 7'b1110000;
-            4'd8: vv_seg_en = 7'b1111111;
-            4'd9: vv_seg_en = 7'b1111011;
-            default: vv_seg_en = 7'b0000000;
-        endcase
-    end
-    
-    wire vv_digit_pixel = (vv_seg_en[6] && vv_seg_a) || (vv_seg_en[5] && vv_seg_b) ||
-                          (vv_seg_en[4] && vv_seg_c) || (vv_seg_en[3] && vv_seg_d) ||
-                          (vv_seg_en[2] && vv_seg_e) || (vv_seg_en[1] && vv_seg_f) ||
-                          (vv_seg_en[0] && vv_seg_g);
-    
-    wire vv_neg_sign = in_vv_digit_area && vec_v_is_neg && 
-                       (vv_dig_x >= 0) && (vv_dig_x < 10) && (vv_dig_y >= 12) && (vv_dig_y < 17);
+    wire vec_digits_on = vec_digit0_pix | vec_digit1_pix;
     
     // Cursor for vector v (only in edit mode when sw1=1)
     wire vec_v_cursor = state_edit && (sw1 == 1'b1) && (vec_v_idx == edit_row) && vec_v_valid_idx;
@@ -257,29 +457,28 @@ module display_controller (
     wire [9:0] left_bar_local_x = left_bar_offset - (left_bar_idx * (BAR_WIDTH + BAR_SPACING));
     wire [9:0] right_bar_local_x = right_bar_offset - (right_bar_idx * (BAR_WIDTH + BAR_SPACING));
     
-    // Get bar heights (absolute values, scaled)
-    wire [15:0] vo_abs [0:3];
-    wire [15:0] vn_abs [0:3];
-    assign vo_abs[0] = vo[0][15] ? -vo[0] : vo[0];
-    assign vo_abs[1] = vo[1][15] ? -vo[1] : vo[1];
-    assign vo_abs[2] = vo[2][15] ? -vo[2] : vo[2];
-    assign vo_abs[3] = vo[3][15] ? -vo[3] : vo[3];
-    assign vn_abs[0] = vn[0][15] ? -vn[0] : vn[0];
-    assign vn_abs[1] = vn[1][15] ? -vn[1] : vn[1];
-    assign vn_abs[2] = vn[2][15] ? -vn[2] : vn[2];
-    assign vn_abs[3] = vn[3][15] ? -vn[3] : vn[3];
-    
-    // Scale bars (divide by 2, max BAR_MAX_HEIGHT)
+    // Scale bars directly from 4-bit unsigned magnitudes
+    localparam integer BAR_SCALE = 10;
     wire [9:0] vo_bar_h [0:3];
     wire [9:0] vn_bar_h [0:3];
-    assign vo_bar_h[0] = (vo_abs[0] > 320) ? BAR_MAX_HEIGHT : vo_abs[0][8:1];
-    assign vo_bar_h[1] = (vo_abs[1] > 320) ? BAR_MAX_HEIGHT : vo_abs[1][8:1];
-    assign vo_bar_h[2] = (vo_abs[2] > 320) ? BAR_MAX_HEIGHT : vo_abs[2][8:1];
-    assign vo_bar_h[3] = (vo_abs[3] > 320) ? BAR_MAX_HEIGHT : vo_abs[3][8:1];
-    assign vn_bar_h[0] = (vn_abs[0] > 320) ? BAR_MAX_HEIGHT : vn_abs[0][8:1];
-    assign vn_bar_h[1] = (vn_abs[1] > 320) ? BAR_MAX_HEIGHT : vn_abs[1][8:1];
-    assign vn_bar_h[2] = (vn_abs[2] > 320) ? BAR_MAX_HEIGHT : vn_abs[2][8:1];
-    assign vn_bar_h[3] = (vn_abs[3] > 320) ? BAR_MAX_HEIGHT : vn_abs[3][8:1];
+    wire [9:0] vo_scaled [0:3];
+    wire [9:0] vn_scaled [0:3];
+    assign vo_scaled[0] = vo[0] * BAR_SCALE;
+    assign vo_scaled[1] = vo[1] * BAR_SCALE;
+    assign vo_scaled[2] = vo[2] * BAR_SCALE;
+    assign vo_scaled[3] = vo[3] * BAR_SCALE;
+    assign vn_scaled[0] = vn[0] * BAR_SCALE;
+    assign vn_scaled[1] = vn[1] * BAR_SCALE;
+    assign vn_scaled[2] = vn[2] * BAR_SCALE;
+    assign vn_scaled[3] = vn[3] * BAR_SCALE;
+    assign vo_bar_h[0] = (vo_scaled[0] > BAR_MAX_HEIGHT) ? BAR_MAX_HEIGHT : vo_scaled[0];
+    assign vo_bar_h[1] = (vo_scaled[1] > BAR_MAX_HEIGHT) ? BAR_MAX_HEIGHT : vo_scaled[1];
+    assign vo_bar_h[2] = (vo_scaled[2] > BAR_MAX_HEIGHT) ? BAR_MAX_HEIGHT : vo_scaled[2];
+    assign vo_bar_h[3] = (vo_scaled[3] > BAR_MAX_HEIGHT) ? BAR_MAX_HEIGHT : vo_scaled[3];
+    assign vn_bar_h[0] = (vn_scaled[0] > BAR_MAX_HEIGHT) ? BAR_MAX_HEIGHT : vn_scaled[0];
+    assign vn_bar_h[1] = (vn_scaled[1] > BAR_MAX_HEIGHT) ? BAR_MAX_HEIGHT : vn_scaled[1];
+    assign vn_bar_h[2] = (vn_scaled[2] > BAR_MAX_HEIGHT) ? BAR_MAX_HEIGHT : vn_scaled[2];
+    assign vn_bar_h[3] = (vn_scaled[3] > BAR_MAX_HEIGHT) ? BAR_MAX_HEIGHT : vn_scaled[3];
     
     // Check if pixel is in a v_old bar
     reg in_vo_bar;
@@ -355,72 +554,33 @@ module display_controller (
                               (mat_local_y >= mat_grid_y0 + mat_grid_h - 4) || 
                               (mat_local_x >= mat_grid_x0 + mat_grid_w + MAT_BRACKET_W - 3));
     
-    // Get matrix value
-    reg signed [15:0] mat_val;
-    always @(*) begin
-        case ({mat_row, mat_col})
-            4'b0000: mat_val = A[0][0];
-            4'b0001: mat_val = A[0][1];
-            4'b0010: mat_val = A[0][2];
-            4'b0011: mat_val = A[0][3];
-            4'b0100: mat_val = A[1][0];
-            4'b0101: mat_val = A[1][1];
-            4'b0110: mat_val = A[1][2];
-            4'b0111: mat_val = A[1][3];
-            4'b1000: mat_val = A[2][0];
-            4'b1001: mat_val = A[2][1];
-            4'b1010: mat_val = A[2][2];
-            4'b1011: mat_val = A[2][3];
-            4'b1100: mat_val = A[3][0];
-            4'b1101: mat_val = A[3][1];
-            4'b1110: mat_val = A[3][2];
-            4'b1111: mat_val = A[3][3];
-                    endcase
-                end
+    localparam integer MAT_DIGIT_SCALE   = 0; // base size
+    localparam integer MAT_DIGIT_WIDTH   = FONT_BASE_W << MAT_DIGIT_SCALE;  // 5
+    localparam integer MAT_DIGIT_HEIGHT  = FONT_BASE_H << MAT_DIGIT_SCALE;  // 7
+    localparam integer MAT_DIGIT_SPACING = 1;
+    localparam integer MAT_DIGIT_X_START = 4;
+    localparam integer MAT_DIGIT_Y_OFF   = 10;
     
-    wire mat_is_neg = mat_val[15];
-    wire [15:0] mat_abs = mat_is_neg ? -mat_val : mat_val;
-    wire [3:0] mat_digit = mat_abs % 10;
+    wire mat_digit_band = in_mat_grid &&
+                          (mat_cell_y >= MAT_DIGIT_Y_OFF) && (mat_cell_y < MAT_DIGIT_Y_OFF + MAT_DIGIT_HEIGHT);
+    wire [9:0] mat_digit_local_y = mat_cell_y - MAT_DIGIT_Y_OFF;
     
-    // Matrix digit area (centered in cell)
-    wire [9:0] mat_dig_x = mat_cell_x - 10;
-    wire [9:0] mat_dig_y = mat_cell_y - 8;
-    wire in_mat_digit_area = in_mat_grid && (mat_cell_x >= 10) && (mat_cell_x < 35) &&
-                             (mat_cell_y >= 8) && (mat_cell_y < 35);
+    wire mat_digit0_pix = mat_digit_band &&
+                      (mat_cell_x >= MAT_DIGIT_X_START) &&
+                      (mat_cell_x < MAT_DIGIT_X_START + MAT_DIGIT_WIDTH) &&
+                      digit_bitmap_pixel(get_mat_digit(mat_row, mat_col, 2'd0),
+                                         mat_cell_x - MAT_DIGIT_X_START,
+                                         mat_digit_local_y,
+                                         MAT_DIGIT_SCALE);
+    wire mat_digit1_pix = mat_digit_band &&
+                      (mat_cell_x >= MAT_DIGIT_X_START + (MAT_DIGIT_WIDTH + MAT_DIGIT_SPACING)) &&
+                      (mat_cell_x < MAT_DIGIT_X_START + (MAT_DIGIT_WIDTH + MAT_DIGIT_SPACING) + MAT_DIGIT_WIDTH) &&
+                      digit_bitmap_pixel(get_mat_digit(mat_row, mat_col, 2'd1),
+                                         mat_cell_x - (MAT_DIGIT_X_START + (MAT_DIGIT_WIDTH + MAT_DIGIT_SPACING)),
+                                         mat_digit_local_y,
+                                         MAT_DIGIT_SCALE);
     
-    // 7-segment for matrix
-    wire mat_seg_a = in_mat_digit_area && (mat_dig_y < 3) && (mat_dig_x >= 3) && (mat_dig_x < 20);
-    wire mat_seg_b = in_mat_digit_area && (mat_dig_x >= 20) && (mat_dig_y >= 2) && (mat_dig_y < 12);
-    wire mat_seg_c = in_mat_digit_area && (mat_dig_x >= 20) && (mat_dig_y >= 15) && (mat_dig_y < 25);
-    wire mat_seg_d = in_mat_digit_area && (mat_dig_y >= 24) && (mat_dig_x >= 3) && (mat_dig_x < 20);
-    wire mat_seg_e = in_mat_digit_area && (mat_dig_x < 3) && (mat_dig_y >= 15) && (mat_dig_y < 25);
-    wire mat_seg_f = in_mat_digit_area && (mat_dig_x < 3) && (mat_dig_y >= 2) && (mat_dig_y < 12);
-    wire mat_seg_g = in_mat_digit_area && (mat_dig_y >= 12) && (mat_dig_y < 15) && (mat_dig_x >= 3) && (mat_dig_x < 20);
-    
-    reg [6:0] mat_seg_en;
-    always @(*) begin
-        case (mat_digit)
-            4'd0: mat_seg_en = 7'b1111110;
-            4'd1: mat_seg_en = 7'b0110000;
-            4'd2: mat_seg_en = 7'b1101101;
-            4'd3: mat_seg_en = 7'b1111001;
-            4'd4: mat_seg_en = 7'b0110011;
-            4'd5: mat_seg_en = 7'b1011011;
-            4'd6: mat_seg_en = 7'b1011111;
-            4'd7: mat_seg_en = 7'b1110000;
-            4'd8: mat_seg_en = 7'b1111111;
-            4'd9: mat_seg_en = 7'b1111011;
-            default: mat_seg_en = 7'b0000000;
-                    endcase
-                end
-    
-    wire mat_digit_pixel = (mat_seg_en[6] && mat_seg_a) || (mat_seg_en[5] && mat_seg_b) ||
-                           (mat_seg_en[4] && mat_seg_c) || (mat_seg_en[3] && mat_seg_d) ||
-                           (mat_seg_en[2] && mat_seg_e) || (mat_seg_en[1] && mat_seg_f) ||
-                           (mat_seg_en[0] && mat_seg_g);
-    
-    wire mat_neg_sign = in_mat_digit_area && mat_is_neg &&
-                        (mat_dig_x >= 0) && (mat_dig_x < 6) && (mat_dig_y >= 11) && (mat_dig_y < 15);
+    wire mat_digits_on = mat_digit0_pix | mat_digit1_pix;
     
     // Matrix cell border
     wire mat_cell_border = in_mat_grid && 
@@ -454,61 +614,35 @@ module display_controller (
     wire vnew_right_bracket = in_vec_new_region && (vnew_local_x >= vnew_width - 12) &&
                               ((vnew_local_y < 5) || (vnew_local_y >= vnew_height - 5) || (vnew_local_x >= vnew_width - 3));
     
-    // Get v_new value
-    reg signed [15:0] vnew_val;
-    always @(*) begin
-        case (vnew_idx[1:0])
-            2'd0: vnew_val = vn[0];
-            2'd1: vnew_val = vn[1];
-            2'd2: vnew_val = vn[2];
-            2'd3: vnew_val = vn[3];
-                    endcase
-                end
+    // Get v_new value (unsigned)
     
-    wire vnew_is_neg = vnew_val[15];
-    wire [15:0] vnew_abs_val = vnew_is_neg ? -vnew_val : vnew_val;
-    wire [3:0] vnew_digit = vnew_abs_val % 10;
+    localparam integer VNEW_DIGIT_SCALE   = 1;
+    localparam integer VNEW_DIGIT_WIDTH   = FONT_BASE_W << VNEW_DIGIT_SCALE;
+    localparam integer VNEW_DIGIT_HEIGHT  = FONT_BASE_H << VNEW_DIGIT_SCALE;
+    localparam integer VNEW_DIGIT_SPACING = 3;
+    localparam integer VNEW_DIGIT_X_START = 18;
+    localparam integer VNEW_DIGIT_Y_OFF   = 18;
     
-    // v_new digit area
-    wire [9:0] vnew_dig_x = vnew_cell_x - 15;
-    wire [9:0] vnew_dig_y = vnew_local_y - 20;
-    wire in_vnew_digit_area = in_vec_new_region && vnew_valid &&
-                              (vnew_cell_x >= 15) && (vnew_cell_x < 55) &&
-                              (vnew_local_y >= 20) && (vnew_local_y < 55);
+    wire vnew_digit_band = in_vec_new_region && vnew_valid &&
+                           (vnew_local_y >= VNEW_DIGIT_Y_OFF) && (vnew_local_y < VNEW_DIGIT_Y_OFF + VNEW_DIGIT_HEIGHT);
+    wire [9:0] vnew_digit_local_y = vnew_local_y - VNEW_DIGIT_Y_OFF;
     
-    // 7-segment for v_new
-    wire vnew_seg_a = in_vnew_digit_area && (vnew_dig_y < 4) && (vnew_dig_x >= 4) && (vnew_dig_x < 32);
-    wire vnew_seg_b = in_vnew_digit_area && (vnew_dig_x >= 32) && (vnew_dig_y >= 2) && (vnew_dig_y < 16);
-    wire vnew_seg_c = in_vnew_digit_area && (vnew_dig_x >= 32) && (vnew_dig_y >= 19) && (vnew_dig_y < 33);
-    wire vnew_seg_d = in_vnew_digit_area && (vnew_dig_y >= 31) && (vnew_dig_x >= 4) && (vnew_dig_x < 32);
-    wire vnew_seg_e = in_vnew_digit_area && (vnew_dig_x < 4) && (vnew_dig_y >= 19) && (vnew_dig_y < 33);
-    wire vnew_seg_f = in_vnew_digit_area && (vnew_dig_x < 4) && (vnew_dig_y >= 2) && (vnew_dig_y < 16);
-    wire vnew_seg_g = in_vnew_digit_area && (vnew_dig_y >= 15) && (vnew_dig_y < 20) && (vnew_dig_x >= 4) && (vnew_dig_x < 32);
+    wire vnew_digit0_pix = vnew_digit_band &&
+                       (vnew_cell_x >= VNEW_DIGIT_X_START) &&
+                       (vnew_cell_x < VNEW_DIGIT_X_START + VNEW_DIGIT_WIDTH) &&
+                       digit_bitmap_pixel(get_vnew_digit(vnew_idx[1:0], 2'd0),
+                                          vnew_cell_x - VNEW_DIGIT_X_START,
+                                          vnew_digit_local_y,
+                                          VNEW_DIGIT_SCALE);
+    wire vnew_digit1_pix = vnew_digit_band &&
+                       (vnew_cell_x >= VNEW_DIGIT_X_START + (VNEW_DIGIT_WIDTH + VNEW_DIGIT_SPACING)) &&
+                       (vnew_cell_x < VNEW_DIGIT_X_START + (VNEW_DIGIT_WIDTH + VNEW_DIGIT_SPACING) + VNEW_DIGIT_WIDTH) &&
+                       digit_bitmap_pixel(get_vnew_digit(vnew_idx[1:0], 2'd1),
+                                          vnew_cell_x - (VNEW_DIGIT_X_START + (VNEW_DIGIT_WIDTH + VNEW_DIGIT_SPACING)),
+                                          vnew_digit_local_y,
+                                          VNEW_DIGIT_SCALE);
     
-    reg [6:0] vnew_seg_en;
-    always @(*) begin
-        case (vnew_digit)
-            4'd0: vnew_seg_en = 7'b1111110;
-            4'd1: vnew_seg_en = 7'b0110000;
-            4'd2: vnew_seg_en = 7'b1101101;
-            4'd3: vnew_seg_en = 7'b1111001;
-            4'd4: vnew_seg_en = 7'b0110011;
-            4'd5: vnew_seg_en = 7'b1011011;
-            4'd6: vnew_seg_en = 7'b1011111;
-            4'd7: vnew_seg_en = 7'b1110000;
-            4'd8: vnew_seg_en = 7'b1111111;
-            4'd9: vnew_seg_en = 7'b1111011;
-            default: vnew_seg_en = 7'b0000000;
-                    endcase
-                end
-    
-    wire vnew_digit_pixel = (vnew_seg_en[6] && vnew_seg_a) || (vnew_seg_en[5] && vnew_seg_b) ||
-                            (vnew_seg_en[4] && vnew_seg_c) || (vnew_seg_en[3] && vnew_seg_d) ||
-                            (vnew_seg_en[2] && vnew_seg_e) || (vnew_seg_en[1] && vnew_seg_f) ||
-                            (vnew_seg_en[0] && vnew_seg_g);
-    
-    wire vnew_neg_sign = in_vnew_digit_area && vnew_is_neg &&
-                         (vnew_dig_x >= 0) && (vnew_dig_x < 10) && (vnew_dig_y >= 14) && (vnew_dig_y < 19);
+    wire vnew_digits_on = vnew_digit0_pix | vnew_digit1_pix;
     
     // v_new border
     wire vnew_border = in_vec_new_region &&
@@ -737,16 +871,16 @@ module display_controller (
         else if (vnew_border) begin
             rgb <= GRAY;
         end
-        // Digits - editable vector v (CYAN)
-        else if (vv_digit_pixel || vv_neg_sign) begin
+        // Digits - editable vector v (color indicates sign)
+        else if (vec_digits_on) begin
             rgb <= CYAN;
         end
         // Digits - matrix (WHITE)
-        else if (mat_digit_pixel || mat_neg_sign) begin
+        else if (mat_digits_on) begin
             rgb <= WHITE;
         end
         // Digits - result v_new (GREEN)
-        else if (vnew_digit_pixel || vnew_neg_sign) begin
+        else if (vnew_digits_on) begin
             rgb <= GREEN;
         end
         // Digits - iteration counter (MAGENTA)

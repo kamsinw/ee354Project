@@ -14,7 +14,7 @@ async def test_dominant_fsm(dut):
     dut.mul_done.value = 0
     dut.scale_done.value = 0
     dut.diff_done.value = 0
-    dut.max_d_in.value = 100
+    dut.max_d_in.value = 10
     dut.epsilon.value = 2
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
@@ -62,7 +62,7 @@ async def test_dominant_fsm(dut):
     assert dut.load_max_d.value == 1, "Should assert load_max_d in CHECK state"
     dut.diff_done.value = 0
     
-    # Since max_d_in (100) > epsilon (2), should transition to LOAD then MULT
+    # Since max_d_in (10) > epsilon (2), should transition to LOAD then MULT
     # LOAD state asserts load_v_old for one cycle, then transitions to MULT
     await RisingEdge(dut.clk)  # Transition to LOAD
     await Timer(1, unit="ns")

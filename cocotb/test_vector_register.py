@@ -1,7 +1,19 @@
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge, Timer
-import random
+from cocotb.triggers import RisingEdge
+
+def pack_vector(vec, lane_width):
+    packed = 0
+    mask = (1 << lane_width) - 1
+    for idx, val in enumerate(vec):
+        packed |= (val & mask) << (lane_width * idx)
+    return packed
+
+
+def unpack_vector(value, lane_width):
+    mask = (1 << lane_width) - 1
+    return [(value >> (lane_width * idx)) & mask for idx in range(4)]
+
 
 @cocotb.test()
 async def test_vector_register(dut):
@@ -16,51 +28,23 @@ async def test_vector_register(dut):
     await RisingEdge(dut.clk)
     dut.reset.value = 0
     
+    lane_width = len(dut.vec_out.value) // 4
+    
     # Check initial value (should be [1,1,1,1])
     await RisingEdge(dut.clk)
-    out_val = dut.out.value.integer
-    v0 = (out_val >> 0) & 0xFFFF
-    v1 = (out_val >> 16) & 0xFFFF
-    v2 = (out_val >> 32) & 0xFFFF
-    v3 = (out_val >> 48) & 0xFFFF
-    
-    # Sign extend if needed
-    if v0 & 0x8000:
-        v0 = v0 - 0x10000
-    if v1 & 0x8000:
-        v1 = v1 - 0x10000
-    if v2 & 0x8000:
-        v2 = v2 - 0x10000
-    if v3 & 0x8000:
-        v3 = v3 - 0x10000
-    
-    assert v0 == 1 and v1 == 1 and v2 == 1 and v3 == 1, f"Initial value should be [1,1,1,1], got [{v0},{v1},{v2},{v3}]"
+    observed = unpack_vector(dut.vec_out.value.integer, lane_width)
+    assert observed == [1, 1, 1, 1], f"Initial value should be [1,1,1,1], got {observed}"
     
     # Load new value
-    new_val = (5 << 48) | (6 << 32) | (7 << 16) | 8
-    dut._id("in", extended=False).value = new_val
+    new_vec = [8, 7, 6, 5]
+    dut.vec_in.value = pack_vector(new_vec, lane_width)
     dut.load.value = 1
     await RisingEdge(dut.clk)
     dut.load.value = 0
     await RisingEdge(dut.clk)
     
-    # Check loaded value
-    out_val = dut.out.value.integer
-    v0 = (out_val >> 0) & 0xFFFF
-    v1 = (out_val >> 16) & 0xFFFF
-    v2 = (out_val >> 32) & 0xFFFF
-    v3 = (out_val >> 48) & 0xFFFF
-    
-    if v0 & 0x8000:
-        v0 = v0 - 0x10000
-    if v1 & 0x8000:
-        v1 = v1 - 0x10000
-    if v2 & 0x8000:
-        v2 = v2 - 0x10000
-    if v3 & 0x8000:
-        v3 = v3 - 0x10000
-    
-    assert v0 == 8 and v1 == 7 and v2 == 6 and v3 == 5, f"Expected [8,7,6,5], got [{v0},{v1},{v2},{v3}]"
+    observed = unpack_vector(dut.vec_out.value.integer, lane_width)
+    assert observed == new_vec, f"Expected {new_vec}, got {observed}"
     
     print("✓ vector_register test passed")
 

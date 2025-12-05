@@ -3,6 +3,23 @@ from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, Timer, FallingEdge
 import numpy as np
 
+
+def pack_matrix(matrix):
+    packed = 0
+    for row in range(4):
+        for col in range(4):
+            idx = 4 * row + col
+            packed |= (matrix[row][col] & 0xF) << (4 * idx)
+    return packed
+
+
+def pack_vector(vec):
+    packed = 0
+    for idx, val in enumerate(vec):
+        packed |= (val & 0xF) << (4 * idx)
+    return packed
+
+
 @cocotb.test()
 async def test_vga_display(dut):
     """Test VGA display timing and functionality"""
@@ -18,33 +35,16 @@ async def test_vga_display(dut):
     dut.sw1.value = 0
     
     # Initialize matrix and vector
-    # Matrix: [4,1,1,1; 1,4,1,1; 1,1,4,1; 1,1,1,4]
-    matrix_a = 0
-    matrix_a |= (4 & 0xFFFF) << 0
-    matrix_a |= (1 & 0xFFFF) << 16
-    matrix_a |= (1 & 0xFFFF) << 32
-    matrix_a |= (1 & 0xFFFF) << 48
-    matrix_a |= (1 & 0xFFFF) << 64
-    matrix_a |= (4 & 0xFFFF) << 80
-    matrix_a |= (1 & 0xFFFF) << 96
-    matrix_a |= (1 & 0xFFFF) << 112
-    matrix_a |= (1 & 0xFFFF) << 128
-    matrix_a |= (1 & 0xFFFF) << 144
-    matrix_a |= (4 & 0xFFFF) << 160
-    matrix_a |= (1 & 0xFFFF) << 176
-    matrix_a |= (1 & 0xFFFF) << 192
-    matrix_a |= (1 & 0xFFFF) << 208
-    matrix_a |= (1 & 0xFFFF) << 224
-    matrix_a |= (4 & 0xFFFF) << 240
-    dut.matrix_a.value = matrix_a
+    matrix_vals = [
+        [4, 1, 1, 1],
+        [1, 4, 1, 1],
+        [1, 1, 4, 1],
+        [1, 1, 1, 4],
+    ]
+    dut.matrix_a.value = pack_matrix(matrix_vals)
     
-    # Vector: [1,1,1,1]
-    vector_v = 0
-    vector_v |= (1 & 0xFFFF) << 0
-    vector_v |= (1 & 0xFFFF) << 16
-    vector_v |= (1 & 0xFFFF) << 32
-    vector_v |= (1 & 0xFFFF) << 48
-    dut.vector_v.value = vector_v
+    vector_vals = [1, 1, 1, 1]
+    dut.vector_v.value = pack_vector(vector_vals)
     
     # Reset
     await RisingEdge(dut.clk_100mhz)
