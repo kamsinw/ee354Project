@@ -29,21 +29,13 @@ module matrix_memory #(
 
     reg signed [WIDTH-1:0] mem [0:3][0:3];
 
-    function automatic signed [WIDTH-1:0] cast_val;
-        input integer val;
-        begin
-            cast_val = val;
-        end
-    endfunction
-
-    integer r_idx;
-    integer c_idx;
+    integer r, c;
 
     always @(posedge clk) begin
         if (reset) begin
-            for (r_idx = 0; r_idx < 4; r_idx = r_idx + 1) begin
-                for (c_idx = 0; c_idx < 4; c_idx = c_idx + 1) begin
-                    mem[r_idx][c_idx] <= (r_idx == c_idx) ? cast_val(4) : cast_val(1);
+            for (r = 0; r < 4; r = r + 1) begin
+                for (c = 0; c < 4; c = c + 1) begin
+                    mem[r][c] <= (r == c) ? 4 : 1;
                 end
             end
         end else if (we) begin

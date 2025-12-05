@@ -22,7 +22,7 @@ module dominant_datapath #(
     output wire signed [15:0]       max_d_out
 );
 
-    wire signed [16*WIDTH-1:0] matrix_bus = {
+    wire signed [16*WIDTH-1:0] mat_bus = {
         A33[WIDTH-1:0], A32[WIDTH-1:0], A31[WIDTH-1:0], A30[WIDTH-1:0],
         A23[WIDTH-1:0], A22[WIDTH-1:0], A21[WIDTH-1:0], A20[WIDTH-1:0],
         A13[WIDTH-1:0], A12[WIDTH-1:0], A11[WIDTH-1:0], A10[WIDTH-1:0],
@@ -53,7 +53,7 @@ module dominant_datapath #(
         .clk  (clk),
         .reset(reset),
         .start(start_mult),
-        .A    (matrix_bus),
+        .A    (mat_bus),
         .V    (v_old_packed),
         .Y    (y_vec_packed),
         .done (mul_done)
@@ -67,7 +67,6 @@ module dominant_datapath #(
         end
     end
 
-    // bug:fix(ollie) Legacy variant lacks norm input; keep unused with caution
     vector_scale #(.IN_WIDTH(WIDTH)) vscale (
         .clk  (clk),
         .reset(reset),

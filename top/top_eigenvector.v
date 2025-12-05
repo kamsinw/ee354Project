@@ -287,7 +287,7 @@ module top_eigenvector (
     
     // Iteration counter
     reg [7:0] iter_count_q;
-    reg [7:0] iter_count_d;
+    reg [7:0] iter_count_d;// intermediate to fix the 0 error
     reg [15:0] debug_display_value_reg;
     
     reg sw0_r;
@@ -296,7 +296,7 @@ module top_eigenvector (
     always @(*) begin
         iter_count_d = iter_count_q;
         if (scale_done) begin
-            iter_count_d = iter_count_q + 1'b1;
+            iter_count_d = iter_count_q + 1'b1;//increment counter after scalling
         end
         if (sw0_edge) begin
             iter_count_d = 8'd0;
@@ -375,7 +375,7 @@ module top_eigenvector (
         .v_new_valid_out(v_new_valid)
     );
     
-    // LED layout: [0]=lock, [1]=button pulse, [2]=mode, [3]=new vector valid, [5:4]=row, [7:6]=col
+    // LED layout for  [0]=lock, [1]=button pulse, [2]=mode, [3]=new vector valid, [5:4]=row, [7:6]=col
     wire any_button_pulse = btnl_pulse | btnr_pulse | btnu_pulse | btnd_pulse | btnc_pulse;
     
     assign led[0] = cell_lock_q;  // Shows locked/unlocked state
@@ -420,10 +420,8 @@ module top_eigenvector (
     // Map to individual segment outputs (ssd_segments is already active-low)
     assign {ca, cb, cc, cd, ce, cf, cg} = ssd_segments;
     
-    // Decimal point: active-low (0=on, 1=off)
-    // In edit mode: on for negative (dark), off for positive (lit)
-    // In run mode: always off (lit)
-    assign dp = (sw0 == 1'b0) ? ~cell_lock_q : 1'b1;
+// dp off
+    assign dp = (sw0 == 1'b1) ? ~cell_lock_q : 1'b1;
     
     // Map anode bus to physical pins
     assign {an7, an6, an5, an4, an3, an2, an1, an0} = ssd_anode;
@@ -446,7 +444,7 @@ module top_eigenvector (
             debug_display_value_reg <= v0_zero_ext;
         end
     end
-    
+    // buss grid for the matrix in vga
     assign matrix_grid_packed = {matrix_grid_q[3][3], matrix_grid_q[3][2], matrix_grid_q[3][1], matrix_grid_q[3][0],
                               matrix_grid_q[2][3], matrix_grid_q[2][2], matrix_grid_q[2][1], matrix_grid_q[2][0],
                               matrix_grid_q[1][3], matrix_grid_q[1][2], matrix_grid_q[1][1], matrix_grid_q[1][0],

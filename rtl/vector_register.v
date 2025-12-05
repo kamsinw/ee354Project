@@ -10,12 +10,12 @@ module vector_register #(
     output reg  [4*ELEM_WIDTH-1:0] vec_out
 );
 
-    localparam [ELEM_WIDTH-1:0] INIT_VALUE = {{(ELEM_WIDTH-1){1'b0}}, 1'b1};
-    wire [4*ELEM_WIDTH-1:0]     init_vector = {4{INIT_VALUE}};
+    localparam [ELEM_WIDTH-1:0] INIT_VAL = {{(ELEM_WIDTH-1){1'b0}}, 1'b1};
+    wire [4*ELEM_WIDTH-1:0] init_vec = {4{INIT_VAL}};
 
     always @(posedge clk) begin
         if (reset) begin
-            vec_out <= init_vector;
+            vec_out <= init_vec;
         end else if (load) begin
             vec_out <= vec_in;
         end

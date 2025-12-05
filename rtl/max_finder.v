@@ -11,32 +11,32 @@ module max_finder #(
 
     localparam integer LANE_COUNT = 4;
 
-    wire [WIDTH-1:0] lane_data [0:LANE_COUNT-1];
+    wire [WIDTH-1:0] lanes [0:LANE_COUNT-1];
 
     genvar lane_idx;
     generate
         for (lane_idx = 0; lane_idx < LANE_COUNT; lane_idx = lane_idx + 1) begin : unpack_lane
             localparam integer LO = lane_idx * WIDTH;
             localparam integer HI = LO + WIDTH - 1;
-            assign lane_data[lane_idx] = lane_values[HI:LO];
+            assign lanes[lane_idx] = lane_values[HI:LO];
         end
     endgenerate
 
-    wire [WIDTH-1:0] left_pair  = (lane_data[0] > lane_data[1]) ? lane_data[0] : lane_data[1];
-    wire [WIDTH-1:0] right_pair = (lane_data[2] > lane_data[3]) ? lane_data[2] : lane_data[3];
+    wire [WIDTH-1:0] max_l = (lanes[0] > lanes[1]) ? lanes[0] : lanes[1];
+    wire [WIDTH-1:0] max_r = (lanes[2] > lanes[3]) ? lanes[2] : lanes[3];
 
-    reg [WIDTH-1:0] left_pair_q;
-    reg [WIDTH-1:0] right_pair_q;
+    reg [WIDTH-1:0] max_l_q;
+    reg [WIDTH-1:0] max_r_q;
 
     always @(posedge clk) begin
         if (reset) begin
-            left_pair_q  <= {WIDTH{1'b0}};
-            right_pair_q <= {WIDTH{1'b0}};
-            max_value    <= {WIDTH{1'b0}};
+            max_l_q <= {WIDTH{1'b0}};
+            max_r_q <= {WIDTH{1'b0}};
+            max_value <= {WIDTH{1'b0}};
         end else begin
-            left_pair_q  <= left_pair;
-            right_pair_q <= right_pair;
-            max_value    <= (left_pair_q > right_pair_q) ? left_pair_q : right_pair_q;
+            max_l_q <= max_l;
+            max_r_q <= max_r;
+            max_value <= (max_l_q > max_r_q) ? max_l_q : max_r_q;
         end
     end
 

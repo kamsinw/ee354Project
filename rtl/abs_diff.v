@@ -10,9 +10,9 @@ module abs_diff #(
 
     localparam integer LANE_COUNT = 4;
 
-    wire [WIDTH-1:0] new_value [0:LANE_COUNT-1];
-    wire [WIDTH-1:0] old_value [0:LANE_COUNT-1];
-    wire [WIDTH-1:0] lane_abs  [0:LANE_COUNT-1];
+    wire [WIDTH-1:0] val_new [0:LANE_COUNT-1];
+    wire [WIDTH-1:0] val_old [0:LANE_COUNT-1];
+    wire [WIDTH-1:0] abs_lane [0:LANE_COUNT-1];
 
     genvar lane_idx;
 
@@ -21,12 +21,12 @@ module abs_diff #(
             localparam integer LO = lane_idx * WIDTH;
             localparam integer HI = LO + WIDTH - 1;
 
-            assign new_value[lane_idx] = vec_new[HI:LO];
-            assign old_value[lane_idx] = vec_old[HI:LO];
-            assign lane_abs[lane_idx]  = (new_value[lane_idx] >= old_value[lane_idx])
-                                       ? (new_value[lane_idx] - old_value[lane_idx])
-                                       : (old_value[lane_idx] - new_value[lane_idx]);
-            assign vec_diff[HI:LO]     = lane_abs[lane_idx];
+            assign val_new[lane_idx] = vec_new[HI:LO];
+            assign val_old[lane_idx] = vec_old[HI:LO];
+            assign abs_lane[lane_idx] = (val_new[lane_idx] >= val_old[lane_idx])
+                                      ? (val_new[lane_idx] - val_old[lane_idx])
+                                      : (val_old[lane_idx] - val_new[lane_idx]);
+            assign vec_diff[HI:LO] = abs_lane[lane_idx];
         end
     endgenerate
 

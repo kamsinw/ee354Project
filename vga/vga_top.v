@@ -1,7 +1,5 @@
 `timescale 1ns / 1ps
 
-// vga_top.v - VGA top module following EE354_vga_demo pattern
-
 module vga_top (
     input  wire clk_100mhz,
     input  wire reset,
@@ -25,27 +23,24 @@ module vga_top (
     output wire [3:0] vga_blue
 );
 
-    // Simple clock divider: 100 MHz -> 25 MHz (divide by 4)
-    // Following demo pattern: two-stage toggle divider
     reg pulse;
     reg clk25;
-    
+
     initial begin
         pulse = 1'b0;
         clk25 = 1'b0;
     end
-    
+
     always @(posedge clk_100mhz)
         pulse <= ~pulse;
-    
+
     always @(posedge pulse)
         clk25 <= ~clk25;
 
     wire bright;
     wire [9:0] hCount, vCount;
     wire [11:0] rgb;
-    
-    // VGA timing generator (matches demo's display_controller)
+
     counter vga_counter (
         .clk(clk25),
         .hSync(vga_hsync),
@@ -55,7 +50,6 @@ module vga_top (
         .vCount(vCount)
     );
 
-    // Display renderer 
     display_controller renderer (
         .clk(clk25),
         .bright(bright),
@@ -76,7 +70,7 @@ module vga_top (
         .v_new(v_new),
         .rgb(rgb)
     );
-    
+
     assign vga_red = rgb[11:8];
     assign vga_green = rgb[7:4];
     assign vga_blue = rgb[3:0];

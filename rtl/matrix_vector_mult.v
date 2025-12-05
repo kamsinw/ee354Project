@@ -17,16 +17,16 @@ module matrix_vector_mult #(
     localparam [PARTIAL_WIDTH-1:0]     OUT_MAX_EXT = {{(PARTIAL_WIDTH-OUT_WIDTH){1'b0}}, OUT_MAX};
 
     reg [1:0] row_idx_q;
-    reg [1:0] row_idx_d;
+    reg [1:0] row_idx_n;
     reg [1:0] col_idx_q;
-    reg [1:0] col_idx_d;
+    reg [1:0] col_idx_n;
     reg [PARTIAL_WIDTH-1:0] accum_q;
-    reg [PARTIAL_WIDTH-1:0] accum_d;
+    reg [PARTIAL_WIDTH-1:0] accum_n;
     reg [4*OUT_WIDTH-1:0]   y_q;
-    reg [4*OUT_WIDTH-1:0]   y_d;
+    reg [4*OUT_WIDTH-1:0]   y_n;
     reg                     busy_q;
-    reg                     busy_d;
-    reg                     done_d;
+    reg                     busy_n;
+    reg                     done_n;
 
     wire [3:0] matrix [0:3][0:3];
     assign matrix[0][0] = A[3:0];
@@ -61,34 +61,34 @@ module matrix_vector_mult #(
                                         : accum_sum[OUT_WIDTH-1:0];
 
     always @(*) begin
-        row_idx_d = row_idx_q;
-        col_idx_d = col_idx_q;
-        accum_d   = accum_q;
-        y_d       = y_q;
-        busy_d    = busy_q;
-        done_d    = 1'b0;
+        row_idx_n = row_idx_q;
+        col_idx_n = col_idx_q;
+        accum_n   = accum_q;
+        y_n       = y_q;
+        busy_n    = busy_q;
+        done_n    = 1'b0;
 
         if (start && !busy_q) begin
-            row_idx_d = 2'd0;
-            col_idx_d = 2'd0;
-            accum_d   = {PARTIAL_WIDTH{1'b0}};
-            y_d       = {4*OUT_WIDTH{1'b0}};
-            busy_d    = 1'b1;
+            row_idx_n = 2'd0;
+            col_idx_n = 2'd0;
+            accum_n   = {PARTIAL_WIDTH{1'b0}};
+            y_n       = {4*OUT_WIDTH{1'b0}};
+            busy_n    = 1'b1;
         end else if (busy_q) begin
             if (last_col) begin
-                y_d[row_idx_q*OUT_WIDTH +: OUT_WIDTH] = row_result;
-                accum_d = {PARTIAL_WIDTH{1'b0}};
-                col_idx_d = 2'd0;
+                y_n[row_idx_q*OUT_WIDTH +: OUT_WIDTH] = row_result;
+                accum_n = {PARTIAL_WIDTH{1'b0}};
+                col_idx_n = 2'd0;
                 if (last_row) begin
-                    busy_d = 1'b0;
-                    done_d = 1'b1;
-                    row_idx_d = 2'd0;
+                    busy_n = 1'b0;
+                    done_n = 1'b1;
+                    row_idx_n = 2'd0;
                 end else begin
-                    row_idx_d = row_idx_q + 1'b1;
+                    row_idx_n = row_idx_q + 1'b1;
                 end
             end else begin
-                accum_d   = accum_sum;
-                col_idx_d = col_idx_q + 1'b1;
+                accum_n   = accum_sum;
+                col_idx_n = col_idx_q + 1'b1;
             end
         end
     end
@@ -103,13 +103,13 @@ module matrix_vector_mult #(
             Y         <= {4*OUT_WIDTH{1'b0}};
             done      <= 1'b0;
         end else begin
-            row_idx_q <= row_idx_d;
-            col_idx_q <= col_idx_d;
-            accum_q   <= accum_d;
-            y_q       <= y_d;
-            busy_q    <= busy_d;
-            Y         <= y_d;
-            done      <= done_d;
+            row_idx_q <= row_idx_n;
+            col_idx_q <= col_idx_n;
+            accum_q   <= accum_n;
+            y_q       <= y_n;
+            busy_q    <= busy_n;
+            Y         <= y_n;
+            done      <= done_n;
         end
     end
 

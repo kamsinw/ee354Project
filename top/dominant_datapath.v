@@ -36,11 +36,11 @@ module dominant_datapath #(
 );
 
     localparam integer LANE_WIDTH   = 4;
-    localparam integer VECTOR_WIDTH = 4 * LANE_WIDTH;
-    localparam integer MATRIX_WIDTH = 16 * LANE_WIDTH;
-    localparam integer MAX_WIDTH    = Y_WIDTH;  // Max value is same width as input
+    localparam integer VEC_WIDTH = 4 * LANE_WIDTH;
+    localparam integer MAT_WIDTH = 16 * LANE_WIDTH;
+    localparam integer MAX_WIDTH = Y_WIDTH;
 
-    wire [MATRIX_WIDTH-1:0] matrix_bus = {
+    wire [MAT_WIDTH-1:0] mat_bus = {
         A33, A32, A31, A30,
         A23, A22, A21, A20,
         A13, A12, A11, A10,
@@ -48,40 +48,39 @@ module dominant_datapath #(
     };
 
     reg  first_iter_q;
-    reg  first_iter_d;
+    reg  first_iter_n;
     reg  [4*Y_WIDTH-1:0] y_q;
-    reg  [4*Y_WIDTH-1:0] y_d;
+    reg  [4*Y_WIDTH-1:0] y_n;
     reg  [3:0]           max_diff_q;
-    reg  [3:0]           max_diff_d;
+    reg  [3:0]           max_diff_n;
 
     reg  [1:0]           scale_state_q;
-    reg  [1:0]           scale_state_d;
+    reg  [1:0]           scale_state_n;
     reg                  max_start_q;
-    reg                  max_start_d;
+    reg                  max_start_n;
     reg                  scale_start_q;
-    reg                  scale_start_d;
+    reg                  scale_start_n;
     reg                  scale_done_q;
-    reg                  scale_done_d;
+    reg                  scale_done_n;
     reg  [4*SCALE_OUT-1:0] v_new_q;
-    reg  [4*SCALE_OUT-1:0] v_new_d;
+    reg  [4*SCALE_OUT-1:0] v_new_n;
     reg                  v_new_valid_q;
-    reg                  v_new_valid_d;
+    reg                  v_new_valid_n;
 
     localparam [1:0] SCALE_IDLE = 2'd0;
     localparam [1:0] SCALE_MAX  = 2'd1;
     localparam [1:0] SCALE_DIV  = 2'd2;
 
-    wire [VECTOR_WIDTH-1:0] v_old_bus;
-    wire [VECTOR_WIDTH-1:0] seed_vector     = v_init;
-    wire [VECTOR_WIDTH-1:0] feedback_vector = v_new_q[VECTOR_WIDTH-1:0];
-    wire [VECTOR_WIDTH-1:0] v_reg_input     = first_iter_q ? seed_vector : feedback_vector;
-    // bug:fix(kamsi) vector_register assumes 4-bit lanes; SCALE_OUT != 4 breaks this mux
+    wire [VEC_WIDTH-1:0] v_old_bus;
+    wire [VEC_WIDTH-1:0] seed_vec = v_init;
+    wire [VEC_WIDTH-1:0] feedback_vec = v_new_q[VEC_WIDTH-1:0];
+    wire [VEC_WIDTH-1:0] v_reg_in = first_iter_q ? seed_vec : feedback_vec;
 
     vector_register vreg_old (
         .clk    (clk),
         .reset  (reset),
         .load   (load_v_old),
-        .vec_in (v_reg_input),
+        .vec_in (v_reg_in),
         .vec_out(v_old_bus)
     );
 
@@ -91,40 +90,36 @@ module dominant_datapath #(
         .clk  (clk),
         .reset(reset),
         .start(start_mult),
-        .A    (matrix_bus),
+        .A    (mat_bus),
         .V    (v_old_bus),
         .Y    (y_calc),
         .done (mul_done)
     );
 
-    wire [MAX_WIDTH-1:0] max_value;
+    wire [MAX_WIDTH-1:0] max_val;
     wire                 max_done;
 
-    vector_max #(
-        .WIDTH(Y_WIDTH)
-    ) vmax (
+    vector_max #(.WIDTH(Y_WIDTH)) vmax (
         .clk     (clk),
         .reset   (reset),
         .start   (max_start_q),
         .V_in    (y_q),
-        .max_out (max_value),
+        .max_out (max_val),
         .done    (max_done)
     );
 
-    wire [4*SCALE_OUT-1:0] scaled_vector;
+    wire [4*SCALE_OUT-1:0] scaled_vec;
     wire                   scale_div_done;
 
     vector_scale #(
         .IN_WIDTH  (Y_WIDTH),
-        .OUT_WIDTH (SCALE_OUT),
-        .MAX_WIDTH (MAX_WIDTH)
+        .OUT_WIDTH (SCALE_OUT)
     ) vscale (
         .clk       (clk),
         .reset     (reset),
         .start     (scale_start_q),
         .V_in      (y_q),
-        .max_value (max_value),
-        .V_out     (scaled_vector),
+        .V_out     (scaled_vec),
         .done      (scale_div_done)
     );
 
@@ -134,65 +129,65 @@ module dominant_datapath #(
         .clk     (clk),
         .reset   (reset),
         .start   (start_diff),
-        .vec_new (v_new_q[VECTOR_WIDTH-1:0]),
+        .vec_new (v_new_q[VEC_WIDTH-1:0]),
         .vec_old (v_old_bus),
         .max_diff(max_diff_raw),
         .done    (diff_done)
     );
 
     always @(*) begin
-        first_iter_d = first_iter_q;
-        y_d          = y_q;
-        max_diff_d   = max_diff_q;
+        first_iter_n = first_iter_q;
+        y_n          = y_q;
+        max_diff_n   = max_diff_q;
 
         if (load_v_old) begin
-            first_iter_d = 1'b0;
+            first_iter_n = 1'b0;
         end
 
         if (load_y) begin
-            y_d = y_calc;
+            y_n = y_calc;
         end
 
         if (load_max_d) begin
-            max_diff_d = max_diff_raw;
+            max_diff_n = max_diff_raw;
         end
     end
 
     always @(*) begin
-        scale_state_d = scale_state_q;
-        max_start_d   = 1'b0;
-        scale_start_d = 1'b0;
-        scale_done_d  = 1'b0;
-        v_new_d       = v_new_q;
-        v_new_valid_d = v_new_valid_q;
+        scale_state_n = scale_state_q;
+        max_start_n   = 1'b0;
+        scale_start_n = 1'b0;
+        scale_done_n  = 1'b0;
+        v_new_n       = v_new_q;
+        v_new_valid_n = v_new_valid_q;
 
         case (scale_state_q)
             SCALE_IDLE: begin
-                v_new_valid_d = 1'b0;
+                v_new_valid_n = 1'b0;
                 if (start_scale) begin
-                    max_start_d   = 1'b1;
-                    scale_state_d = SCALE_MAX;
+                    max_start_n   = 1'b1;
+                    scale_state_n = SCALE_MAX;
                 end
             end
 
             SCALE_MAX: begin
                 if (max_done) begin
-                    scale_start_d = 1'b1;
-                    scale_state_d = SCALE_DIV;
+                    scale_start_n = 1'b1;
+                    scale_state_n = SCALE_DIV;
                 end
             end
 
             SCALE_DIV: begin
                 if (scale_div_done) begin
-                    v_new_d       = scaled_vector;
-                    v_new_valid_d = 1'b1;
-                    scale_done_d  = 1'b1;
-                    scale_state_d = SCALE_IDLE;
+                    v_new_n       = scaled_vec;
+                    v_new_valid_n = 1'b1;
+                    scale_done_n  = 1'b1;
+                    scale_state_n = SCALE_IDLE;
                 end
             end
 
             default: begin
-                scale_state_d = SCALE_IDLE;
+                scale_state_n = SCALE_IDLE;
             end
         endcase
     end
@@ -209,15 +204,15 @@ module dominant_datapath #(
             v_new_q       <= {(4*SCALE_OUT){1'b0}};
             v_new_valid_q <= 1'b0;
         end else begin
-            first_iter_q  <= first_iter_d;
-            y_q           <= y_d;
-            max_diff_q    <= max_diff_d;
-            scale_state_q <= scale_state_d;
-            max_start_q   <= max_start_d;
-            scale_start_q <= scale_start_d;
-            scale_done_q  <= scale_done_d;
-            v_new_q       <= v_new_d;
-            v_new_valid_q <= v_new_valid_d;
+            first_iter_q  <= first_iter_n;
+            y_q           <= y_n;
+            max_diff_q    <= max_diff_n;
+            scale_state_q <= scale_state_n;
+            max_start_q   <= max_start_n;
+            scale_start_q <= scale_start_n;
+            scale_done_q  <= scale_done_n;
+            v_new_q       <= v_new_n;
+            v_new_valid_q <= v_new_valid_n;
         end
     end
 
@@ -225,9 +220,9 @@ module dominant_datapath #(
     assign max_d_out       = max_diff_q;
     assign v_new_valid_out = v_new_valid_q;
     assign y_out           = y_q;
-    assign max_out         = max_value;
+    assign max_out         = max_val;
     assign v_new_out       = v_new_q;
-    assign {v3, v2, v1, v0} = v_new_q[VECTOR_WIDTH-1:0];
+    assign {v3, v2, v1, v0} = v_new_q[VEC_WIDTH-1:0];
     assign {v_old3, v_old2, v_old1, v_old0} = v_old_bus;
 
 endmodule
